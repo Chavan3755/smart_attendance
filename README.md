@@ -19,9 +19,3 @@ Smart Attendance is a Frappe based application used for managing employee attend
 ```bash
 bench get-app smart_attendance
 bench --site yoursite install-app smart_attendance
-
-#### License
-
-mit
-
----
