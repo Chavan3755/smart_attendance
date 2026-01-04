@@ -1,0 +1,72 @@
+<script>
+    navigator.mediaDevices.getUserMedia({ video: true })
+    .then(stream => {
+        document.getElementById("camera").srcObject = stream;
+    });
+    
+    function showMessage(msg, type) {
+        let box = document.getElementById("resultBox");
+        box.style.display = "block";
+        box.className = type === "success" ? "success" : "error";
+        box.innerHTML = msg;
+    }
+    
+    function capture() {
+        let video = document.getElementById("camera");
+        let canvas = document.getElementById("capture_canvas");
+        let ctx = canvas.getContext("2d");
+    
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+    
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+        canvas.toBlob(file => uploadImage(file), "image/jpeg", 0.9);
+    }
+    
+    function uploadImage(file) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("is_private", 0);
+    
+        fetch("/api/method/upload_file", {
+            method: "POST",
+            body: formData
+        })
+        .then(r => r.json())
+        .then(res => {
+            if (!res.message || !res.message.file_url) {
+                showMessage("Image upload failed", "error");
+                return;
+            }
+    
+            let file_url = res.message.file_url;
+    
+            // ✅ Ab attendance API call
+            frappe.call({
+                method: "smart_attendance.smart_attendance.api.face_attendance.mark_attendance",
+                args: {
+                    employee: " ",
+                    file_url: file_url
+                },
+                callback: function(r) {
+                    if (!r.message) {
+                        showMessage("Attendance API Error", "error");
+                        return;
+                    }
+    
+                    if (r.message.success) {
+                        showMessage(
+                            "✅ Attendance Marked<br>Type: " + r.message.log_type +
+                            "<br>Distance: " + r.message.distance,
+                            "success"
+                        );
+                    } else {
+                        showMessage("❌ " + r.message.message, "error");
+                    }
+                }
+            });
+        });
+    }
+    </script>
+    

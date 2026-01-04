@@ -1,0 +1,77 @@
+{
+ "actions": [],
+ "autoname": "field:device_id",
+ "creation": "2025-12-01 19:40:51.269267",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_thre",
+  "device_id",
+  "api_secret_key",
+  "location",
+  "last_seen_at",
+  "active"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_thre",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "device_id",
+   "fieldtype": "Data",
+   "label": "Device ID",
+   "unique": 1
+  },
+  {
+   "fieldname": "api_secret_key",
+   "fieldtype": "Password",
+   "label": "API Secret Key"
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Data",
+   "label": "Location"
+  },
+  {
+   "fieldname": "last_seen_at",
+   "fieldtype": "Datetime",
+   "label": "Last Seen At"
+  },
+  {
+   "default": "0",
+   "fieldname": "active",
+   "fieldtype": "Check",
+   "label": "Active"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-12-22 21:27:42.287099",
+ "modified_by": "Administrator",
+ "module": "Smart Attendance",
+ "name": "Attendance Device",
+ "naming_rule": "By fieldname",
+ "nsm_parent_field": "parent_attendance_devic",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

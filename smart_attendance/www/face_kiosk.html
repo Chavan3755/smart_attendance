@@ -1,0 +1,628 @@
+{% extends "templates/web.html" %}
+{% block title %}Face Attendance Kiosk — Aurora Motion (Merged Final){% endblock %}
+
+{% block page_content %}
+<!-- Merged: Aurora Motion UI + face-api + Frappe attendance + Theme customizer + Auto-capture + 3D notify -->
+<style>
+:root{
+  --bg-1: #0f1724;
+  --bg-2: #071029;
+  --aurora-a: #7c3aed;
+  --aurora-b: #06b6d4;
+  --accent-gradient: linear-gradient(90deg, var(--aurora-a), var(--aurora-b));
+  --fg: #e6f0fb;
+  --muted: #9fb3c8;
+  --radius: 16px;
+  --card-shadow: 0 12px 36px rgba(2,6,23,0.45);
+  font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+}
+#camera-hint{
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  background:rgba(0,0,0,0.45);
+  padding:10px 16px;
+  border-radius:10px;
+  font-size:15px;
+  color:#e5e7eb;
+  pointer-events:none;
+  z-index:6;
+}
+
+#face-guide{
+  position:absolute;
+  width:180px;
+  height:240px;
+  border:2px dashed rgba(255,255,255,0.4);
+  border-radius:50%;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+  z-index:5;
+}
+
+body { margin:0; min-height:100vh; background: radial-gradient(800px 360px at 10% 12%, rgba(124,58,237,0.08), transparent 12%), radial-gradient(900px 420px at 90% 82%, rgba(6,182,212,0.06), transparent 12%), linear-gradient(180deg, var(--bg-1), var(--bg-2)); color:var(--fg); -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+/* Layout */
+.page { display:flex; justify-content:center; padding:40px 12px; }
+.viewport { width:880px; max-width:calc(100% - 24px); perspective:1400px; }
+.outer { border-radius: calc(var(--radius) + 8px); padding: 18px; background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); box-shadow: 0 24px 80px rgba(2,6,23,0.6); border: 1px solid rgba(255,255,255,0.03); }
+.card { margin-top:-16px; border-radius: var(--radius); background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)); padding:14px; transform-style:preserve-3d; transition: transform .22s cubic-bezier(.2,.9,.2,1), box-shadow .22s; box-shadow: var(--card-shadow); border: 1px solid rgba(255,255,255,0.02); }
+.header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.title { font-size:20px; margin:0; color:var(--fg); font-weight:700; }
+.subtitle { color:var(--muted); font-size:13px; margin-top:6px; }
+.layout { display:grid; grid-template-columns: 1fr 360px; gap:14px; align-items:flex-start; }
+.left, .right { width:100%; }
+.field { margin-top:10px; text-align:left; }
+.label { display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }
+.input { width:100%; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.04); background: rgba(255,255,255,0.02); color:var(--fg); font-size:15px; }
+.camera { margin-top:12px; position:relative; border-radius:10px; overflow:hidden; height:360px; background: linear-gradient(180deg, rgba(3,7,14,0.65), rgba(2,6,12,0.82)); border: 1px solid rgba(255,255,255,0.02); }
+.camera-inner { position:absolute; inset:8px; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center; background: rgba(6,8,16,0.6); }
+.camera-bg { position:absolute; inset:0; background-size:cover; background-position:center; opacity:0.12; filter: blur(6px) saturate(85%); }
+video { width:100%; height:100%; object-fit:cover; display:block; }
+.ribbon { position:absolute; width:200%; height:160%; top:-30%; left:-50%; background: linear-gradient(90deg, rgba(124,58,237,0.12), rgba(6,182,212,0.12)); transform: rotate(-12deg); animation: floatRibbon 16s linear infinite; filter: blur(28px); opacity:0.9; }
+@keyframes floatRibbon { 0%{ transform: translateX(-20%) rotate(-12deg) scale(.96);} 50%{ transform: translateX(8%) rotate(-10deg) scale(1.02);} 100%{ transform: translateX(-20%) rotate(-12deg) scale(.96);} }
+.glow { position:absolute; inset:8px; border-radius:8px; pointer-events:none; box-shadow: 0 0 40px rgba(124,58,237,0.12), 0 0 80px rgba(6,182,212,0.06) inset; animation: glowPulse 4.5s ease-in-out infinite; mix-blend-mode: screen; }
+@keyframes glowPulse { 0%{filter: blur(8px) brightness(1.02);}50%{filter: blur(14px) brightness(1.12);}100%{filter: blur(8px) brightness(1.02);} }
+.badge { position:absolute; top:12px; left:12px; padding:8px 12px; border-radius:999px; font-weight:700; font-size:13px; color:#041226; background:#fff; transform-origin:center; box-shadow:0 10px 28px rgba(2,6,23,0.12); opacity:0.98; }
+.badge.in { background: linear-gradient(90deg, rgba(16,185,129,0.95), rgba(6,182,212,0.9)); }
+.badge.out { background: linear-gradient(90deg, rgba(245,158,11,0.95), rgba(234,88,12,0.9)); }
+.controls { display:flex; gap:10px; margin-top:12px; }
+.capture-btn { flex:1; padding:12px 14px; border-radius:10px; border:none; cursor:pointer; font-weight:700; font-size:15px; background: var(--accent-gradient); color:#fff; box-shadow:0 10px 28px rgba(12,23,40,0.28); }
+.small-btn { padding:10px 12px; background: rgba(255,255,255,0.02); border-radius:10px; border:1px solid rgba(255,255,255,0.02); color:var(--muted); }
+.result { margin-top:12px; padding:12px; border-radius:10px; display:flex; justify-content:space-between; gap:12px; align-items:center; background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); color:var(--fg); }
+.panel { background: rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.02); padding:12px; border-radius:10px; color:var(--muted); }
+.panel h4 { margin:0 0 8px 0; color:var(--fg); font-size:14px; }
+.row { display:flex; gap:8px; align-items:center; margin-top:8px; }
+.model-status { font-size:12px; color:var(--muted); margin-top:6px; }
+#bboxCanvas { position:absolute; left:8px; top:8px; width:calc(100% - 16px); height:calc(100% - 16px); pointer-events:none; }
+.hidden{display:none !important;} .muted{color:var(--muted); font-size:13px;} @media (max-width:900px){ .viewport{width:96%;} .layout{grid-template-columns:1fr; } .camera{height:260px;} }
+.in-btn { padding: 12px 18px; border-radius: 10px; border: none; font-weight: 700; font-size: 15px; color: #fff; cursor: pointer; background: linear-gradient(90deg, #16a34a, #22c55e); box-shadow: 0 10px 25px rgba(34,197,94,0.35); }
+.out-btn { padding: 12px 18px; border-radius: 10px; border: none; font-weight: 700; font-size: 15px; color: #fff; cursor: pointer; background: linear-gradient(90deg, #dc2626, #ef4444); box-shadow: 0 10px 25px rgba(239,68,68,0.35); }
+/* 3D notify */
+.notify3d{ position:fixed; top:28px; left:50%; transform:translateX(-50%) scale(.8); min-width:300px; padding:18px 28px; border-radius:16px; font-weight:700; text-align:center; font-size:17px; z-index:9999; color:#fff; box-shadow:0 25px 70px rgba(0,0,0,.5); animation: pop3d .35s ease forwards; opacity:0; pointer-events:none; }
+.notify3d.in{ background:linear-gradient(135deg,#16a34a,#22c55e); }
+.notify3d.out{ background:linear-gradient(135deg,#dc2626,#ef4444); }
+.notify3d.error{ background:linear-gradient(135deg,#7f1d1d,#b91c1c); }
+@keyframes pop3d{ 0%{ transform:translateX(-50%) scale(.6); opacity:.0 } 100%{ transform:translateX(-50%) scale(1); opacity:1 } }
+/* history panel */
+.history { margin-top:12px; background: rgba(255,255,255,0.02); padding:10px; border-radius:10px; max-height:220px; overflow:auto; }
+.history .row { display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid rgba(255,255,255,0.02); }
+.history .row:last-child{ border-bottom: none; }
+</style>
+
+<div id="notify3d" class="hidden"></div>
+
+<div class="page">
+  <div class="viewport">
+    <div class="outer">
+      <div class="card" id="kioskCard" role="main" aria-label="Aurora Motion Kiosk">
+
+        <div class="header">
+          <div>
+            <div class="title">Aurora Motion Kiosk</div>
+            <div class="subtitle">Animated waves · Face detection · Live customizer</div>
+          </div>
+          <div style="min-width:44px; text-align:right;">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><defs><linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#06b6d4"/></linearGradient></defs><circle cx="12" cy="12" r="10" fill="url(#g1)" opacity="0.16"/></svg>
+          </div>
+        </div>
+
+        <div class="layout">
+          <!-- LEFT: Camera + Controls -->
+          <div class="left">
+            <div class="field">
+              <label class="label">Employee ID</label>
+              <input id="employee_id" class="input" type="text" value="" autocomplete="off" />
+            </div>
+            <div class="camera" aria-live="polite">
+              <div class="camera-inner">
+            
+                <div id="face-guide"></div>
+            
+                <div id="cameraBg" class="camera-bg"
+                  style="background-image:url('/files/0c261b40-99c5-4c9d-9a56-a9a8707f309e_image.png');">
+                </div>
+            
+                <video id="camera" autoplay playsinline muted></video>
+            
+                <div id="camera-hint">🎥 Align your face inside the box</div>
+            
+                <div class="ribbon"></div>
+                <div class="glow"></div>
+                <canvas id="bboxCanvas"></canvas>
+            
+              </div>
+            
+              <div id="inoutBadge" class="badge hidden">IN</div>
+            
+              <div style="
+                position:absolute;
+                right:12px;
+                bottom:12px;
+                font-size:13px;
+                color:rgba(255,255,255,0.9);
+                background: rgba(0,0,0,0.18);
+                padding:6px 8px;
+                border-radius:8px;">
+                Aurora
+              </div>
+            </div>
+            
+            <canvas id="capture_canvas" width="960" height="720" style="display:none;"></canvas>
+            
+            <div class="controls">
+              <button id="inout_btn" class="in-btn">✅ IN</button>
+              <button id="capture_btn" class="capture-btn">📸 Capture & Mark</button>
+              <button id="preview_toggle" class="small-btn">Preview</button>
+            </div>
+            
+            <img id="imgPreview" class="img-preview hidden"
+                 style="max-width:100%; margin-top:10px; border-radius:8px;" />
+            
+            <div id="resultBox" class="result hidden">
+              <div id="resultLeft"></div>
+              <div id="resultRight"></div>
+            </div>
+
+            <div id="debug" class="debug hidden"
+            style="margin-top:8px; font-size:12px;"></div>
+       
+            <div class="history" id="dailyHistory">
+              <div style="font-weight:700; margin-bottom:6px;">Today — IN/OUT</div>
+              <div id="historyRows"></div>
+            </div>
+
+          </div>
+
+          <!-- RIGHT: Customizer + Status -->
+          <div class="right">
+            <div class="panel">
+              <h4>Theme Color Customizer</h4>
+              <div class="row">
+                <label class="muted" style="min-width:80px;">Aurora A</label>
+                <input id="colorA" type="color" value="#7c3aed">
+                <input id="colorB" type="color" value="#06b6d4" style="margin-left:8px;">
+              </div>
+
+              <div class="row">
+                <label class="muted" style="min-width:80px;">Button</label>
+                <input id="btnA" type="color" value="#7c3aed">
+                <input id="btnB" type="color" value="#06b6d4" style="margin-left:8px;">
+              </div>
+
+              <div class="row" style="margin-top:10px;">
+                <button id="resetTheme" class="small-btn">Reset Theme</button>
+                <div style="flex:1"></div>
+                <div id="themeSaved" class="muted" style="font-size:13px; display:none;">Saved</div>
+              </div>
+            </div>
+
+            <div class="panel" style="margin-top:12px;">
+              <h4>Features</h4>
+              <div class="row">
+                <label class="muted" style="min-width:110px;">Sound</label>
+                <input id="feature_sound" type="checkbox" checked>
+              </div>
+              <div class="row">
+                <label class="muted" style="min-width:110px;">Vibration</label>
+                <input id="feature_vibrate" type="checkbox" checked>
+              </div>
+              <div class="row">
+                <label class="muted" style="min-width:110px;">Show Face %</label>
+                <input id="feature_facepct" type="checkbox" checked>
+              </div>
+              <div class="row">
+                <label class="muted" style="min-width:110px;">Auto Capture</label>
+                <input id="feature_autocapture" type="checkbox" checked>
+
+              </div>
+            </div>
+
+            <div class="panel" style="margin-top:12px;">
+              <h4>Face Detection</h4>
+              <div class="model-status" id="modelStatus">Loading models…</div>
+              <div style="margin-top:8px;" class="muted">Note: models load from CDN. You can host locally for offline.</div>
+            </div>
+
+          </div>
+        </div> <!-- layout -->
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- face-api -->
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
+
+<script>
+(async function(){
+/* ---------- Elements ---------- */
+const kioskCard = document.getElementById('kioskCard');
+const camera = document.getElementById('camera');
+const bboxCanvas = document.getElementById('bboxCanvas');
+const bboxCtx = bboxCanvas.getContext('2d');
+const canvas = document.getElementById('capture_canvas');
+const ctx = canvas.getContext('2d');
+const empInput = document.getElementById('employee_id');
+const captureBtn = document.getElementById('capture_btn');
+const previewBtn = document.getElementById('preview_toggle');
+const imgPreview = document.getElementById('imgPreview');
+const resultBox = document.getElementById('resultBox');
+const resultLeft = document.getElementById('resultLeft');
+const resultRight = document.getElementById('resultRight');
+const debug = document.getElementById('debug');
+const inoutBadge = document.getElementById('inoutBadge');
+const cameraBg = document.getElementById('cameraBg');
+const historyRows = document.getElementById('historyRows');
+
+const feature_sound = document.getElementById('feature_sound');
+const feature_vibrate = document.getElementById('feature_vibrate');
+const feature_facepct = document.getElementById('feature_facepct');
+const feature_autocapture = document.getElementById('feature_autocapture');
+
+const colorA = document.getElementById('colorA');
+const colorB = document.getElementById('colorB');
+const btnA = document.getElementById('btnA');
+const btnB = document.getElementById('btnB');
+const resetTheme = document.getElementById('resetTheme');
+const themeSaved = document.getElementById('themeSaved');
+const modelStatus = document.getElementById('modelStatus');
+
+cameraBg.style.backgroundImage = "url('/files/0c261b40-99c5-4c9d-9a56-a9a8707f309e_image.png')";
+
+/* ---------- Theme ---------- */
+function applyTheme(cA,cB,bA,bB){
+  document.documentElement.style.setProperty('--aurora-a', cA);
+  document.documentElement.style.setProperty('--aurora-b', cB);
+  document.documentElement.style.setProperty('--accent-gradient', `linear-gradient(90deg, ${bA}, ${bB})`);
+  document.querySelectorAll('.capture-btn').forEach(el=> el.style.background = `linear-gradient(90deg, ${bA}, ${bB})`);
+}
+const savedTheme = localStorage.getItem('kiosk_theme');
+if(savedTheme){
+  try{ const s = JSON.parse(savedTheme); colorA.value=s.cA;colorB.value=s.cB;btnA.value=s.bA;btnB.value=s.bB;applyTheme(s.cA,s.cB,s.bA,s.bB);}catch(e){}
+} else applyTheme(colorA.value,colorB.value,btnA.value,btnB.value);
+[colorA,colorB,btnA,btnB].forEach(el=>el.addEventListener('input', ()=> applyTheme(colorA.value,colorB.value,btnA.value,btnB.value)));
+resetTheme.addEventListener('click', ()=>{
+  colorA.value='#7c3aed'; colorB.value='#06b6d4'; btnA.value='#7c3aed'; btnB.value='#06b6d4';
+  applyTheme(colorA.value,colorB.value,btnA.value,btnB.value);
+  localStorage.setItem('kiosk_theme', JSON.stringify({cA:colorA.value,cB:colorB.value,bA:btnA.value,bB:btnB.value}));
+  themeSaved.style.display='inline';
+  setTimeout(()=>themeSaved.style.display='none',1200);
+});
+
+/* ---------- Audio ---------- */
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+const audioCtx = AudioCtx ? new AudioCtx() : null;
+function playTone(freq,dur=120,type='sine',gain=0.12){ if(!audioCtx) return; const o=audioCtx.createOscillator(), g=audioCtx.createGain(); o.type=type; o.frequency.value=freq; g.gain.value=0; o.connect(g); g.connect(audioCtx.destination); const now=audioCtx.currentTime; g.gain.linearRampToValueAtTime(gain, now+0.01); o.start(now); g.gain.exponentialRampToValueAtTime(0.0001, now+dur/1000); o.stop(now+dur/1000+0.02); }
+function playSuccessTone(profile){ if(!audioCtx || !feature_sound.checked) return; if(profile==='soft'){ playTone(880,140,'sine',0.12); setTimeout(()=>playTone(1320,110,'sine',0.08),140);} else if(profile==='arcade'){ playTone(1040,80,'square',0.14); setTimeout(()=>playTone(760,90,'square',0.12),90);} else playTone(900,90,'sine',0.12); }
+function playFailTone(profile){ if(!audioCtx || !feature_sound.checked) return; if(profile==='soft'){ playTone(300,220,'sawtooth',0.16); setTimeout(()=>playTone(220,130,'sawtooth',0.12),160);} else if(profile==='arcade'){ playTone(220,200,'sawtooth',0.18); setTimeout(()=>playTone(160,160,'sawtooth',0.12),140);} else playTone(220,180,'sine',0.14); }
+
+/* ---------- Vibration & TTS ---------- */
+function doVibrate(ok=true){ if(!feature_vibrate.checked) return; if(!('vibrate' in navigator)) return; if(ok) navigator.vibrate([30,60]); else navigator.vibrate([160,80,60]); }
+function speak(text){ try{ if(!('speechSynthesis' in window)) return; const u=new SpeechSynthesisUtterance(text); u.lang='en-IN'; speechSynthesis.speak(u);}catch(e){console.warn(e);} }
+
+/* ---------- 3D notify ---------- */
+function show3DNotify(type,text){
+  const box=document.getElementById('notify3d');
+  box.className=`notify3d ${type}`;
+  box.innerHTML=text;
+  box.style.opacity='1';
+  box.classList.remove('hidden');
+  if(type==='in'){ playSuccessTone('soft'); doVibrate(true); }
+  else if(type==='out'){ playSuccessTone('arcade'); doVibrate(true); }
+  else if(type==='error'){ playFailTone('soft'); doVibrate(false); }
+  setTimeout(()=>{ box.classList.add('hidden'); box.style.opacity='0'; },2600);
+}
+
+/* ---------- Card tilt ---------- */
+function onMove(e){ const bounds=kioskCard.getBoundingClientRect(); const x=(e.clientX-bounds.left)/bounds.width-0.5; const y=(e.clientY-bounds.top)/bounds.height-0.5; const rotX=(-y)*6; const rotY=(x)*10; kioskCard.style.transform=`rotateX(${rotX}deg) rotateY(${rotY}deg) translateZ(6px)`; }
+function onLeave(){ kioskCard.style.transform=`rotateX(0deg) rotateY(0deg) translateZ(0)`; }
+window.addEventListener('mousemove', onMove); kioskCard.addEventListener('mouseleave', onLeave);
+
+/* ---------- Camera ---------- */
+async function startCamera(){ try{ const stream = await navigator.mediaDevices.getUserMedia({ video:{ width:1280, height:720 }, audio:false }); camera.srcObject = stream; await camera.play(); resizeOverlay(); logDebug('Camera started'); } catch(e){ show3DNotify('error','Camera error'); logDebug('Camera error: '+(e.message||e)); } }
+startCamera();
+function resizeOverlay(){ const rect=camera.getBoundingClientRect(); bboxCanvas.width = rect.width * devicePixelRatio; bboxCanvas.height = rect.height * devicePixelRatio; bboxCanvas.style.width = rect.width + 'px'; bboxCanvas.style.height = rect.height + 'px'; bboxCtx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); }
+window.addEventListener('resize', resizeOverlay);
+
+/* ---------- face-api models ---------- */
+const modelUrl='https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+modelStatus.innerText='Loading models (CDN)…';
+await faceapi.nets.tinyFaceDetector.loadFromUri(modelUrl);
+await faceapi.nets.faceLandmark68Net.loadFromUri(modelUrl);
+modelStatus.innerText='Models loaded';
+logDebug('face-api loaded');
+
+// ---------- AI helpers ----------
+let stableSince = null;
+let detecting = true;
+
+const detectOptions = new faceapi.TinyFaceDetectorOptions({
+  inputSize: 256,
+  scoreThreshold: 0.5
+});
+
+async function detectionLoop(){
+  if(!detecting || camera.readyState < 2){
+    requestAnimationFrame(detectionLoop);
+    return;
+  }
+
+  try{
+    const dets = await faceapi
+  .detectAllFaces(camera, detectOptions)
+  .withFaceLandmarks();
+
+    drawDetections(dets);
+
+    const hint = document.getElementById("camera-hint");
+
+    // ❌ No face
+    if(!dets || dets.length === 0){
+      hint.style.display = "block";
+      stableSince = null;
+      requestAnimationFrame(detectionLoop);
+      return;
+    }
+
+    // ❌ Multiple faces
+    if(dets.length > 1){
+      hint.style.display = "block";
+      stableSince = null;
+      show3DNotify('error','❌ Multiple faces detected');
+      requestAnimationFrame(detectionLoop);
+      return;
+    }
+
+    // ✅ Single face
+    hint.style.display = "none";
+
+    // 🧠 Stability check (1 sec)
+    if(feature_autocapture.checked){
+      const now = Date.now();
+      if(!stableSince) stableSince = now;
+
+      if(now - stableSince > 1000){
+        handleAutoCapture(dets[0]);
+        stableSince = null;
+      }
+    }
+
+  } catch(e){
+    console.warn('detect error', e);
+  }
+
+  requestAnimationFrame(detectionLoop);
+}
+
+detectionLoop();
+
+
+
+function clearBoxes(){ bboxCtx.clearRect(0,0,bboxCanvas.width,bboxCanvas.height); }
+function drawDetections(dets){
+  clearBoxes();
+  if(!dets || dets.length===0) return;
+  const displaySize={ width: camera.clientWidth, height: camera.clientHeight };
+  const scaleX=displaySize.width/(camera.videoWidth||displaySize.width);
+  const scaleY=displaySize.height/(camera.videoHeight||displaySize.height);
+  bboxCtx.lineWidth=3;
+  dets.forEach(d=>{
+    const box=d.detection.box;
+    const x=box.x*scaleX;
+    const y=box.y*scaleY;
+    const w=box.width*scaleX;
+    const h=box.height*scaleY;
+    bboxCtx.strokeStyle='rgba(0,255,150,0.9)';
+    bboxCtx.fillStyle='rgba(0,255,150,0.08)';
+    roundRect(bboxCtx,x,y,w,h,8);
+    const score=Math.round(d.detection.score*100)/100;
+    bboxCtx.font='14px Inter, Arial';
+    bboxCtx.fillStyle='rgba(0,0,0,0.7)';
+    bboxCtx.fillRect(x,y-22,110,20);
+    bboxCtx.fillStyle='rgba(255,255,255,0.95)';
+    const txt = feature_facepct.checked ? `face ${score}` : `face`;
+    bboxCtx.fillText(txt, x+6, y-7);
+  });
+}
+function roundRect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+
+/* ---------- Helpers ---------- */
+function logDebug(msg){ debug.classList.remove('hidden'); debug.innerText = typeof msg==='string'? msg : JSON.stringify(msg,null,2); console.log('[KIOSK]', msg); }
+function startLoading(){ /* placeholder */ }
+function stopLoading(){ /* placeholder */ }
+
+/* ---------- Local history ---------- */
+function addHistoryEntry(employee, type){
+  const todayKey = `history_${new Date().toISOString().slice(0,10)}`;
+  let arr = JSON.parse(localStorage.getItem(todayKey) || '[]');
+  arr.unshift({time:new Date().toLocaleTimeString(),employee,type});
+  localStorage.setItem(todayKey, JSON.stringify(arr));
+  renderHistory();
+}
+function renderHistory(){
+  const todayKey = `history_${new Date().toISOString().slice(0,10)}`;
+  let arr = JSON.parse(localStorage.getItem(todayKey) || '[]');
+  historyRows.innerHTML = '';
+  arr.slice(0,30).forEach(r=>{
+    const row = document.createElement('div');
+    row.className='row';
+    row.innerHTML = `<div style="color:var(--fg)">${r.time} • ${r.employee}</div><div style="color:var(--muted)">${r.type}</div>`;
+    historyRows.appendChild(row);
+  });
+}
+renderHistory();
+
+/* ---------- ERPNext API helpers (frappe.call) ---------- */
+/* Get last Employee Checkin's log_type */
+async function getLastLogType(employee_id){
+  try{
+    if(!employee_id) return null;
+    const filters = JSON.stringify([["employee","=", employee_id]]);
+    return new Promise((res,rej)=>{
+      frappe.call({
+        method: "frappe.client.get_list",
+        args: {
+          doctype: "Employee Checkin",
+          fields: ["log_type"],
+          filters: JSON.parse(filters),
+          order_by: "creation desc",
+          limit_page_length: 1
+        },
+        callback: function(r){
+          if(r && r.message && r.message.length>0) res(r.message[0].log_type);
+          else res(null);
+        }
+      });
+    });
+  } catch(e){ console.error('Last log error', e); return null; }
+}
+
+/* Create Employee Checkin using frappe.client.insert */
+async function createCheckin(employee_id, log_type){
+  try{
+    return new Promise((resolve,reject)=>{
+      frappe.call({
+        method: "frappe.client.insert",
+        args: {
+          doc: {
+            doctype: "Employee Checkin",
+            employee: employee_id,
+            log_type: log_type,
+            device_id: "FACE_KIOSK"
+          }
+        },
+        callback: function(r){
+          if(r && r.message){
+            resolve({ ok:true, data:r.message });
+          } else {
+            resolve({ ok:false, data:null });
+          }
+        },
+        error: function(err){
+          resolve({ ok:false, data:null });
+        }
+      });
+    });
+  }catch(e){ console.error('createCheckin error', e); return { ok:false, data:null }; }
+}
+
+/* Auto-create Attendance (Present) — ERPNext */
+function createAttendance(employee_id){
+  if(!employee_id) return;
+  try{
+    frappe.call({
+      method:"frappe.client.insert",
+      args:{
+        doc:{
+          doctype:"Attendance",
+          employee:employee_id,
+          attendance_date: frappe.datetime.nowdate(),
+          status:"Present"
+        }
+      },
+      callback: function(r){
+        // optional: handle r
+      }
+    });
+  }catch(e){ console.warn('Attendance create failed', e); }
+}
+
+/* ---------- Final markAttendance (uses createCheckin & createAttendance) ---------- */
+async function markAttendance(employee_id){
+  try{
+    const last = await getLastLogType(employee_id);
+    const next = last === 'IN' ? 'OUT' : 'IN';
+    const res = await createCheckin(employee_id, next);
+    if(!res.ok){
+      show3DNotify('error','❌ Attendance Failed');
+      return;
+    }
+    // On success:
+    show3DNotify(next==='IN'?'in':'out', next==='IN'?'✅ IN Marked':'⛔ OUT Marked');
+    addHistoryEntry(employee_id, next);
+    updateInOutUI(employee_id);
+    // auto attendance creation for Present (optional)
+    if(next === 'IN'){
+      createAttendance(employee_id);
+    }
+  } catch(e){
+    console.error(e);
+    show3DNotify('error','❌ Network Error');
+  }
+}
+
+/* ---------- UI update ---------- */
+const inoutBtn = document.getElementById('inout_btn');
+async function updateInOutUI(employee_id){
+  try{
+    const last = await getLastLogType(employee_id);
+    const next = last === 'IN' ? 'OUT' : 'IN';
+    if(next==='IN'){ inoutBtn.innerText='✅ IN'; inoutBtn.className='in-btn'; inoutBadge.className='badge in'; inoutBadge.innerText='IN'; inoutBadge.classList.remove('hidden'); }
+    else { inoutBtn.innerText='⛔ OUT'; inoutBtn.className='out-btn'; inoutBadge.className='badge out'; inoutBadge.innerText='OUT'; inoutBadge.classList.remove('hidden'); }
+    // hide badge after short while
+    setTimeout(()=> inoutBadge.classList.add('hidden'), 1600);
+  } catch(e){ console.error(e); }
+}
+
+/* ---------- Auto-capture handler ---------- */
+let lastAutoCaptureAt = 0;
+async function handleAutoCapture(detection){
+  const now = Date.now();
+  if(now - lastAutoCaptureAt < 2800) return;
+  lastAutoCaptureAt = now;
+  await prepareCaptureCanvas();
+  ctx.drawImage(camera,0,0,canvas.width,canvas.height);
+  const dataUrl = canvas.toDataURL('image/jpeg',0.86);
+  imgPreview.src = dataUrl;
+  imgPreview.classList.remove('hidden');
+  const emp = empInput.value.trim();
+  if(!emp){ show3DNotify('error','❌ Employee ID Required'); return; }
+  // Mark attendance (server-side)
+  markAttendance(emp);
+}
+
+async function prepareCaptureCanvas(){
+  const w = camera.videoWidth || 1280;
+  const h = camera.videoHeight || 720;
+  canvas.width = w; canvas.height = h;
+}
+
+/* ---------- Button bindings ---------- */
+captureBtn.addEventListener('click', async ()=>{
+  const emp = empInput.value.trim();
+  if(!emp){ show3DNotify('error','❌ Employee ID Required'); return; }
+  await prepareCaptureCanvas();
+  ctx.drawImage(camera,0,0,canvas.width,canvas.height);
+  imgPreview.src = canvas.toDataURL('image/jpeg',0.86);
+  imgPreview.classList.remove('hidden');
+  markAttendance(emp);
+});
+
+inoutBtn.addEventListener('click', async ()=>{
+  const emp = empInput.value.trim();
+  if(!emp){ show3DNotify('error','❌ Employee ID Required'); return; }
+  markAttendance(emp);
+});
+
+previewBtn.addEventListener('click', ()=> imgPreview.classList.toggle('hidden'));
+
+/* ---------- Page load updates ---------- */
+setTimeout(()=>{ const emp = empInput.value.trim(); if(emp) updateInOutUI(emp); }, 800);
+
+/* ---------- Unlock audio on first interaction ---------- */
+document.addEventListener('click', function once(){
+  try{ audioCtx && audioCtx.resume && audioCtx.resume(); }catch(e){}
+  document.removeEventListener('click', once);
+});
+
+/* ---------- initial render & overlay ---------- */
+renderHistory();
+setTimeout(resizeOverlay,600);
+
+})(); /* IIFE end */
+</script>
+{% endblock %}

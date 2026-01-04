@@ -137,6 +137,12 @@ app_license = "mit"
 # ---------------
 # Hook on document methods and events
 
+doc_events = {
+    "Employee Checkin": {
+        "after_insert": "smart_attendance.smart_attendance.api.auto_attendance.create_realtime_attendance"
+    }
+}
+
 # doc_events = {
 # 	"*": {
 # 		"on_update": "method",
@@ -148,23 +154,11 @@ app_license = "mit"
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"smart_attendance.tasks.all"
-# 	],
-# 	"daily": [
-# 		"smart_attendance.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"smart_attendance.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"smart_attendance.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"smart_attendance.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+    "daily": [
+        "smart_attendance.tasks.daily_cleanup"
+    ]
+}
 
 # Testing
 # -------
@@ -172,6 +166,11 @@ app_license = "mit"
 # before_tests = "smart_attendance.install.before_tests"
 
 # Overriding Methods
+override_whitelisted_methods = {
+    "smart_attendance.smart_attendance.api.face_verification.verify_face":
+    "smart_attendance.smart_attendance.api.face_verification.verify_face"
+}
+
 # ------------------------------
 #
 # override_whitelisted_methods = {
@@ -242,3 +241,8 @@ app_license = "mit"
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
+# --- API methods exposed for kiosk (no CSRF) ---
+ignore_csrf = [
+    "smart_attendance.smart_attendance.api.verify_face",
+    "smart_attendance.smart_attendance.api.enroll_face",
+]
