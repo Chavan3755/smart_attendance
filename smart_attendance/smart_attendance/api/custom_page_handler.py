@@ -19,7 +19,7 @@ def get_kiosk_settings():
             "advanced": {
                 # "face_detection_model": s.face_detection_model,
                 "cdn_url": s.cdn_url,
-                "custom_colour_mode": int(s.custom_colour_mode or 0),
+                "colour_mode": int(s.colour_mode or 0),
             }
         }
     }
