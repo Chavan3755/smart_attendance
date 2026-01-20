@@ -2,13 +2,15 @@
 {% block title %}Face Attendance Kiosk — Aurora Motion (Merged Final){% endblock %}
 
 {% block page_content %}
-<!-- Merged: Aurora Motion UI + face-api + Frappe attendance + Theme customizer + Auto-capture + 3D notify -->
+<!-- Merged: Aurora Motion UI + face-api + Frappe attendance + Theme customizer + Auto-capture + 3D notify + Holidays -->
 <style>
 :root{
   --bg-1: #0f1724;
   --bg-2: #071029;
   --aurora-a: #7c3aed;
   --aurora-b: #06b6d4;
+  --button-a: #7c3aed;
+  --button-b: #06b6d4;
   --accent-gradient: linear-gradient(90deg, var(--aurora-a), var(--aurora-b));
   --fg: #e6f0fb;
   --muted: #9fb3c8;
@@ -16,6 +18,14 @@
   --card-shadow: 0 12px 36px rgba(2,6,23,0.45);
   font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
 }
+
+.light-mode {
+  --bg-1: #f8fafc;
+  --bg-2: #e2e8f0;
+  --fg: #0f1724;
+  --muted: #475569;
+}
+
 #camera-hint{
   position:absolute;
   top:50%;
@@ -43,10 +53,19 @@
   z-index:5;
 }
 
-body { margin:0; min-height:100vh; background: radial-gradient(800px 360px at 10% 12%, rgba(124,58,237,0.08), transparent 12%), radial-gradient(900px 420px at 90% 82%, rgba(6,182,212,0.06), transparent 12%), linear-gradient(180deg, var(--bg-1), var(--bg-2)); color:var(--fg); -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+
+body{
+  margin:0;
+  min-height:100vh;
+  background:linear-gradient(180deg,var(--bg-1),var(--bg-2));
+  color:var(--fg);
+  font-family:Inter,Arial,sans-serif;
+}
+
+
 /* Layout */
 .page { display:flex; justify-content:center; padding:40px 12px; }
-.viewport { width:880px; max-width:calc(100% - 24px); perspective:1400px; }
+.viewport { width:1200px; max-width:calc(100% - 24px); perspective:1400px; }
 .outer { border-radius: calc(var(--radius) + 8px); padding: 18px; background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); box-shadow: 0 24px 80px rgba(2,6,23,0.6); border: 1px solid rgba(255,255,255,0.03); }
 .card { margin-top:-16px; border-radius: var(--radius); background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)); padding:14px; transform-style:preserve-3d; transition: transform .22s cubic-bezier(.2,.9,.2,1), box-shadow .22s; box-shadow: var(--card-shadow); border: 1px solid rgba(255,255,255,0.02); }
 .header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
@@ -69,17 +88,17 @@ video { width:100%; height:100%; object-fit:cover; display:block; }
 .badge.in { background: linear-gradient(90deg, rgba(16,185,129,0.95), rgba(6,182,212,0.9)); }
 .badge.out { background: linear-gradient(90deg, rgba(245,158,11,0.95), rgba(234,88,12,0.9)); }
 .controls { display:flex; gap:10px; margin-top:12px; }
-.capture-btn { flex:1; padding:12px 14px; border-radius:10px; border:none; cursor:pointer; font-weight:700; font-size:15px; background: var(--accent-gradient); color:#fff; box-shadow:0 10px 28px rgba(12,23,40,0.28); }
-.small-btn { padding:10px 12px; background: rgba(255,255,255,0.02); border-radius:10px; border:1px solid rgba(255,255,255,0.02); color:var(--muted); }
+.capture-btn { flex:1; padding:12px 14px; border-radius:10px; border:none; cursor:pointer; font-weight:700; font-size:15px; background: linear-gradient(90deg, var(--button-a), var(--button-b)); color:#fff; box-shadow:0 10px 28px rgba(12,23,40,0.28); }
+.small-btn { padding:10px 12px; background: rgba(255,255,255,0.02); border-radius:10px; border:1px solid rgba(255,255,255,0.02); color:var(--muted); cursor:pointer; }
 .result { margin-top:12px; padding:12px; border-radius:10px; display:flex; justify-content:space-between; gap:12px; align-items:center; background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); color:var(--fg); }
-.panel { background: rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.02); padding:12px; border-radius:10px; color:var(--muted); }
+.panel { background: rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.02); padding:12px; border-radius:10px; color:var(--muted); margin-bottom:12px; }
 .panel h4 { margin:0 0 8px 0; color:var(--fg); font-size:14px; }
 .row { display:flex; gap:8px; align-items:center; margin-top:8px; }
 .model-status { font-size:12px; color:var(--muted); margin-top:6px; }
 #bboxCanvas { position:absolute; left:8px; top:8px; width:calc(100% - 16px); height:calc(100% - 16px); pointer-events:none; }
 .hidden{display:none !important;} .muted{color:var(--muted); font-size:13px;} @media (max-width:900px){ .viewport{width:96%;} .layout{grid-template-columns:1fr; } .camera{height:260px;} }
-.in-btn { padding: 12px 18px; border-radius: 10px; border: none; font-weight: 700; font-size: 15px; color: #fff; cursor: pointer; background: linear-gradient(90deg, #16a34a, #22c55e); box-shadow: 0 10px 25px rgba(34,197,94,0.35); }
-.out-btn { padding: 12px 18px; border-radius: 10px; border: none; font-weight: 700; font-size: 15px; color: #fff; cursor: pointer; background: linear-gradient(90deg, #dc2626, #ef4444); box-shadow: 0 10px 25px rgba(239,68,68,0.35); }
+.in-btn { padding: 12px 18px; border-radius: 10px; border: none; font-weight: 700; font-size: 15px; color: #fff; cursor: pointer; background: linear-gradient(90deg, var(--button-a), var(--button-b)); box-shadow: 0 10px 25px rgba(34,197,94,0.35); }
+.out-btn { padding: 12px 18px; border-radius: 10px; border: none; font-weight: 700; font-size: 15px; color: #fff; cursor: pointer; background: linear-gradient(90deg, var(--button-a), var(--button-b)); box-shadow: 0 10px 25px rgba(239,68,68,0.35); }
 /* 3D notify */
 .notify3d{ position:fixed; top:28px; left:50%; transform:translateX(-50%) scale(.8); min-width:300px; padding:18px 28px; border-radius:16px; font-weight:700; text-align:center; font-size:17px; z-index:9999; color:#fff; box-shadow:0 25px 70px rgba(0,0,0,.5); animation: pop3d .35s ease forwards; opacity:0; pointer-events:none; }
 .notify3d.in{ background:linear-gradient(135deg,#16a34a,#22c55e); }
@@ -90,6 +109,31 @@ video { width:100%; height:100%; object-fit:cover; display:block; }
 .history { margin-top:12px; background: rgba(255,255,255,0.02); padding:10px; border-radius:10px; max-height:220px; overflow:auto; }
 .history .row { display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid rgba(255,255,255,0.02); }
 .history .row:last-child{ border-bottom: none; }
+
+/* Holiday styles */
+.holiday-item {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 14px;
+}
+.holiday-item:last-child {
+  border-bottom: none;
+}
+.holiday-range {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+/* 🔒 Hide all right panels by default */
+.right .panel {
+  display: none !important;
+}
+
+/* ✅ Show ONLY Holidays panel */
+.right .holidays-panel {
+  display: block !important;
+}
+
 </style>
 
 <div id="notify3d" class="hidden"></div>
@@ -176,8 +220,19 @@ video { width:100%; height:100%; object-fit:cover; display:block; }
 
           </div>
 
-          <!-- RIGHT: Customizer + Status -->
+          <!-- RIGHT: Customizer + Status + Holidays -->
           <div class="right">
+            
+            <!-- Holidays Panel -->
+            <div class="panel holidays-panel">
+              <h4>Holidays</h4>
+              <div class="holiday-range" id="holidayRange"></div>
+              <div id="holidayBox">
+                <p style="color: var(--muted); font-size: 14px;">Loading...</p>
+              </div>
+            </div>
+
+            <!-- Theme Customizer -->
             <div class="panel">
               <h4>Theme Color Customizer</h4>
               <div class="row">
@@ -199,7 +254,8 @@ video { width:100%; height:100%; object-fit:cover; display:block; }
               </div>
             </div>
 
-            <div class="panel" style="margin-top:12px;">
+            <!-- Features -->
+            <div class="panel">
               <h4>Features</h4>
               <div class="row">
                 <label class="muted" style="min-width:110px;">Sound</label>
@@ -216,11 +272,15 @@ video { width:100%; height:100%; object-fit:cover; display:block; }
               <div class="row">
                 <label class="muted" style="min-width:110px;">Auto Capture</label>
                 <input id="feature_autocapture" type="checkbox" checked>
-
+              </div>
+              <div class="row">
+                <label class="muted" style="min-width:110px;">Colour Mode</label>
+                <input id="feature_colormode" type="checkbox">
               </div>
             </div>
 
-            <div class="panel" style="margin-top:12px;">
+            <!-- Face Detection Status -->
+            <div class="panel">
               <h4>Face Detection</h4>
               <div class="model-status" id="modelStatus">Loading models…</div>
               <div style="margin-top:8px;" class="muted">Note: models load from CDN. You can host locally for offline.</div>
@@ -262,6 +322,7 @@ const feature_sound = document.getElementById('feature_sound');
 const feature_vibrate = document.getElementById('feature_vibrate');
 const feature_facepct = document.getElementById('feature_facepct');
 const feature_autocapture = document.getElementById('feature_autocapture');
+const feature_colormode = document.getElementById('feature_colormode');
 
 const colorA = document.getElementById('colorA');
 const colorB = document.getElementById('colorB');
@@ -273,24 +334,78 @@ const modelStatus = document.getElementById('modelStatus');
 
 cameraBg.style.backgroundImage = "url('/files/0c261b40-99c5-4c9d-9a56-a9a8707f309e_image.png')";
 
-/* ---------- Theme ---------- */
-function applyTheme(cA,cB,bA,bB){
+/* ---------- Backend Settings ---------- */
+const kioskFlags = {
+  sound: false,
+  vibration: false,
+  showFacePercentage: false,
+  colourMode: false
+};
+
+async function loadKioskSettings(){
+  try {
+    const res = await fetch(
+      "/api/method/smart_attendance.smart_attendance.api.custom_page_handler.get_kiosk_settings"
+    );
+    const data = await res.json();
+    const s = data.message.settings;
+
+    // Apply theme colors from backend
+    document.documentElement.style.setProperty("--aurora-a", s.theme.aurora_a);
+    document.documentElement.style.setProperty("--aurora-b", s.theme.aurora_b);
+    document.documentElement.style.setProperty("--button-a", s.theme.button_a);
+    document.documentElement.style.setProperty("--button-b", s.theme.button_b);
+
+    // Update color pickers
+    colorA.value = s.theme.aurora_a;
+    colorB.value = s.theme.aurora_b;
+    btnA.value = s.theme.button_a;
+    btnB.value = s.theme.button_b;
+
+    // Apply feature flags
+    kioskFlags.sound = !!s.features.sound;
+    kioskFlags.vibration = !!s.features.vibration;
+    kioskFlags.showFacePercentage = !!s.features.show_face_percentage;
+    kioskFlags.colourMode = !!s.advanced.custom_colour_mode;
+
+    // Update UI toggles
+    feature_sound.checked = kioskFlags.sound;
+    feature_vibrate.checked = kioskFlags.vibration;
+    feature_facepct.checked = kioskFlags.showFacePercentage;
+    feature_colormode.checked = kioskFlags.colourMode;
+
+    // Apply color mode
+    document.body.classList.toggle("light-mode", kioskFlags.colourMode);
+
+    // Apply theme
+    applyTheme(colorA.value, colorB.value, btnA.value, btnB.value);
+  } catch (e) {
+    console.error("Failed to load kiosk settings:", e);
+  }
+}
+
+
+
+// /* ---------- Theme ---------- */
+ function applyTheme(cA,cB,bA,bB){
   document.documentElement.style.setProperty('--aurora-a', cA);
   document.documentElement.style.setProperty('--aurora-b', cB);
+  document.documentElement.style.setProperty('--button-a', bA);
+ document.documentElement.style.setProperty('--button-b', bB);
   document.documentElement.style.setProperty('--accent-gradient', `linear-gradient(90deg, ${bA}, ${bB})`);
+  
+  // Update capture button background
   document.querySelectorAll('.capture-btn').forEach(el=> el.style.background = `linear-gradient(90deg, ${bA}, ${bB})`);
+  
+  // Update IN/OUT button backgrounds
+  document.querySelectorAll('.in-btn, .out-btn').forEach(el=> el.style.background = `linear-gradient(90deg, ${bA}, ${bB})`);
 }
-const savedTheme = localStorage.getItem('kiosk_theme');
-if(savedTheme){
-  try{ const s = JSON.parse(savedTheme); colorA.value=s.cA;colorB.value=s.cB;btnA.value=s.bA;btnB.value=s.bB;applyTheme(s.cA,s.cB,s.bA,s.bB);}catch(e){}
-} else applyTheme(colorA.value,colorB.value,btnA.value,btnB.value);
-[colorA,colorB,btnA,btnB].forEach(el=>el.addEventListener('input', ()=> applyTheme(colorA.value,colorB.value,btnA.value,btnB.value)));
-resetTheme.addEventListener('click', ()=>{
-  colorA.value='#7c3aed'; colorB.value='#06b6d4'; btnA.value='#7c3aed'; btnB.value='#06b6d4';
-  applyTheme(colorA.value,colorB.value,btnA.value,btnB.value);
-  localStorage.setItem('kiosk_theme', JSON.stringify({cA:colorA.value,cB:colorB.value,bA:btnA.value,bB:btnB.value}));
-  themeSaved.style.display='inline';
-  setTimeout(()=>themeSaved.style.display='none',1200);
+
+
+/* ---------- Color Mode Toggle ---------- */
+feature_colormode.addEventListener('change', function(){
+  kioskFlags.colourMode = this.checked;
+  document.body.classList.toggle("light-mode", kioskFlags.colourMode);
 });
 
 /* ---------- Audio ---------- */
@@ -456,6 +571,30 @@ function renderHistory(){
 }
 renderHistory();
 
+/* =========================================================
+   Employee Exists (frappe.db.exists via backend)
+  /* =========================================================
+   Employee Exists (FIXED)
+   ========================================================= */
+async function employeeExists(employee_id){
+  if(!employee_id) return false;
+
+  return new Promise(resolve=>{
+    frappe.call({
+      method: "smart_attendance.smart_attendance.api.custom_checkin_employee_id.safe_employee_checkin",
+      args: { employee_id },
+      callback: function(r){
+        // ✅ CORRECT CHECK
+        resolve(r?.message?.ok === true);
+      },
+      error: function(){
+        resolve(false);
+      }
+    });
+  });
+}
+
+
 /* ---------- ERPNext API helpers (frappe.call) ---------- */
 /* Get last Employee Checkin's log_type */
 async function getLastLogType(employee_id){
@@ -531,16 +670,33 @@ function createAttendance(employee_id){
   }catch(e){ console.warn('Attendance create failed', e); }
 }
 
-/* ---------- Final markAttendance (uses createCheckin & createAttendance) ---------- */
+/* =========================================================
+   FINAL markAttendance (WITH VALIDATION)
+   ========================================================= */
 async function markAttendance(employee_id){
   try{
+    startLoading();
+
+    // 🔐 STEP 1: Validate Employee
+    const exists = await employeeExists(employee_id);
+    if(!exists){
+      show3DNotify('error','❌ Employee ID does not exist');
+      logDebug({ error:'Invalid Employee', employee_id });
+      stopLoading();
+      return;
+    }
+
+    // 🔁 STEP 2: Normal IN / OUT logic
     const last = await getLastLogType(employee_id);
     const next = last === 'IN' ? 'OUT' : 'IN';
+
     const res = await createCheckin(employee_id, next);
     if(!res.ok){
       show3DNotify('error','❌ Attendance Failed');
+      stopLoading();
       return;
     }
+
     // On success:
     show3DNotify(next==='IN'?'in':'out', next==='IN'?'✅ IN Marked':'⛔ OUT Marked');
     addHistoryEntry(employee_id, next);
@@ -610,6 +766,69 @@ inoutBtn.addEventListener('click', async ()=>{
 
 previewBtn.addEventListener('click', ()=> imgPreview.classList.toggle('hidden'));
 
+/* ================= HOLIDAY LIST (FINAL & CLEAN) ================= */
+(async function(){
+  console.log("vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv")
+
+/* ================= LOAD HOLIDAYS ================= */
+
+async function loadNext15DaysHolidays(){
+  try {
+    const res = await fetch(
+      "/api/method/smart_attendance.smart_attendance.api.custom_holidays.fetch_next_15_days_holidays"
+    );
+
+    const data = await res.json();
+    console.log("Holiday API Response:", data);
+
+    renderNext15Days(data.message || {});
+  } catch (e) {
+    console.error("Holiday fetch error:", e);
+  }
+}
+
+/* ================= RENDER ================= */
+
+function renderNext15Days(data){
+  const holidayBox = document.getElementById("holidayBox");
+  const holidayRange = document.getElementById("holidayRange");
+
+  holidayBox.innerHTML = "";
+  holidayRange.innerText = "";
+
+  if(!data.holidays || !data.holidays.length){
+    holidayBox.innerHTML = "<p>No holidays</p>";
+    return;
+  }
+
+  holidayRange.innerText = "Next 15 Days";
+
+  data.holidays.forEach((h, i) => {
+    holidayBox.innerHTML += `
+      <div class="holiday-item">
+        <b>${i + 1}. ${h.date}</b><br>
+        ${h.name}
+      </div>
+    `;
+  });
+}
+
+/* ================= INIT ================= */
+
+// ✅ Load holidays on page load (today → next 15 days)
+loadNext15DaysHolidays();
+
+})();
+
+/* ================= INIT ================= */
+
+
+
+document.addEventListener("click",function once(){
+  unlockAudio();
+  document.removeEventListener("click",once);
+});
+
 /* ---------- Page load updates ---------- */
 setTimeout(()=>{ const emp = empInput.value.trim(); if(emp) updateInOutUI(emp); }, 800);
 
@@ -619,7 +838,10 @@ document.addEventListener('click', function once(){
   document.removeEventListener('click', once);
 });
 
-/* ---------- initial render & overlay ---------- */
+/* ---------- Initial load ---------- */
+await loadKioskSettings();
+loadHolidays();
+
 renderHistory();
 setTimeout(resizeOverlay,600);
 
