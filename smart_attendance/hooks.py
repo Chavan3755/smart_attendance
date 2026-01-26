@@ -154,11 +154,11 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
-scheduler_events = {
-    "daily": [
-        "smart_attendance.tasks.daily_cleanup"
-    ]
-}
+# scheduler_events = {
+#     "daily": [
+#         "smart_attendance.tasks.daily_cleanup"
+#     ]
+# }
 
 # Testing
 # -------
