@@ -666,10 +666,7 @@
 
             <div id="debug" class="debug hidden" style="margin-top:8px; font-size:12px;"></div>
 
-            <div class="history" id="dailyHistory">
-              <div style="font-weight:700; margin-bottom:6px;">Today — IN/OUT</div>
-              <div id="historyRows"></div>
-            </div>
+
 
           </div>
 
@@ -1004,26 +1001,7 @@
     function startLoading() { /* placeholder */ }
     function stopLoading() { /* placeholder */ }
 
-    /* ---------- Local history ---------- */
-    function addHistoryEntry(employee, type) {
-      const todayKey = `history_${new Date().toISOString().slice(0, 10)}`;
-      let arr = JSON.parse(localStorage.getItem(todayKey) || '[]');
-      arr.unshift({ time: new Date().toLocaleTimeString(), employee, type });
-      localStorage.setItem(todayKey, JSON.stringify(arr));
-      renderHistory();
-    }
-    function renderHistory() {
-      const todayKey = `history_${new Date().toISOString().slice(0, 10)}`;
-      let arr = JSON.parse(localStorage.getItem(todayKey) || '[]');
-      historyRows.innerHTML = '';
-      arr.slice(0, 30).forEach(r => {
-        const row = document.createElement('div');
-        row.className = 'row';
-        row.innerHTML = `<div style="color:var(--fg)">${r.time} • ${r.employee}</div><div style="color:var(--muted)">${r.type}</div>`;
-        historyRows.appendChild(row);
-      });
-    }
-    renderHistory();
+
 
     /* =========================================================
        Employee Exists (frappe.db.exists via backend)
@@ -1214,6 +1192,13 @@
        ========================================================= */
     async function markAttendance(employee_id) {
       try {
+        // 1. Validate Employee Exists
+        const exists = await employeeExists(employee_id);
+        if (!exists) {
+          show3DNotify('error', '❌ Employee not found');
+          return;
+        }
+
         const last = await getLastLogType(employee_id);
         const next = last === 'IN' ? 'OUT' : 'IN';
         const res = await createCheckin(employee_id, next);
@@ -1223,7 +1208,6 @@
         }
         // On success:
         show3DNotify(next === 'IN' ? 'in' : 'out', next === 'IN' ? '✅ IN Marked' : '⛔ OUT Marked');
-        addHistoryEntry(employee_id, next);
         updateInOutUI(employee_id);
         // Auto attendance creation for Present (optional)
         if (next === 'IN') {
@@ -1382,7 +1366,7 @@
     await loadKioskSettings();
     loadNext15DaysHolidays();
 
-    renderHistory();
+
     setTimeout(resizeOverlay, 600);
 
   })(); /* IIFE end */
