@@ -1013,13 +1013,11 @@
 
       return new Promise(resolve => {
         frappe.call({
-          method: "smart_attendance.smart_attendance.api.custom_checkin_employee_id.safe_employee_checkin",
+          method: "smart_attendance.smart_attendance.api.custom_checkin_employee_id.check_employee_exists",
           args: { employee_id },
           callback: function (r) {
-
-            resolve(r?.message?.ok === true);
+            resolve(r?.message === true);
           },
-
           error: function () {
             resolve(false);
           }
@@ -1115,21 +1113,14 @@
     async function getLastLogType(employee_id) {
       try {
         if (!employee_id) return null;
-        const filters = JSON.stringify([["employee", "=", employee_id]]);
         return new Promise((res, rej) => {
           frappe.call({
-            method: "frappe.client.get_list",
-            args: {
-              doctype: "Employee Checkin",
-              fields: ["log_type"],
-              filters: JSON.parse(filters),
-              order_by: "time desc",
-              limit_page_length: 1
-            },
+            method: "smart_attendance.smart_attendance.api.custom_checkin_employee_id.get_last_log",
+            args: { employee_id },
             callback: function (r) {
-              if (r && r.message && r.message.length > 0) res(r.message[0].log_type);
-              else res(null);
-            }
+              res(r?.message || "OUT");
+            },
+            error: function () { res("OUT"); }
           });
         });
       } catch (e) { console.error('Last log error', e); return null; }
@@ -1137,55 +1128,8 @@
 
 
     /* Create Employee Checkin using frappe.client.insert */
-    async function createCheckin(employee_id, log_type) {
-      try {
-        return new Promise((resolve, reject) => {
-          frappe.call({
-            method: "frappe.client.insert",
-            args: {
-              doc: {
-                doctype: "Employee Checkin",
-                employee: employee_id,
-                log_type: log_type,
-                device_id: "FACE_KIOSK"
-              }
-            },
-            callback: function (r) {
-              if (r && r.message) {
-                resolve({ ok: true, data: r.message });
-              } else {
-                resolve({ ok: false, data: null });
-              }
-            },
-            error: function (err) {
-              resolve({ ok: false, data: null });
-            }
-          });
-        });
-      } catch (e) { console.error('createCheckin error', e); return { ok: false, data: null }; }
-    }
+    // Old helpers removed
 
-
-    /* Auto-create Attendance (Present) — ERPNext */
-    function createAttendance(employee_id) {
-      if (!employee_id) return;
-      try {
-        frappe.call({
-          method: "frappe.client.insert",
-          args: {
-            doc: {
-              doctype: "Attendance",
-              employee: employee_id,
-              attendance_date: frappe.datetime.nowdate(),
-              status: "Present"
-            }
-          },
-          callback: function (r) {
-            // optional: handle r
-          }
-        });
-      } catch (e) { console.warn('Attendance create failed', e); }
-    }
 
 
     /* =========================================================
@@ -1200,29 +1144,27 @@
           return;
         }
 
-        let next;
-        if (explicit_type) {
-          next = explicit_type;
-        } else {
-          const last = await getLastLogType(employee_id);
-          next = last === 'IN' ? 'OUT' : 'IN';
-        }
-
-        const res = await createCheckin(employee_id, next);
-        if (!res.ok) {
-          show3DNotify('error', '❌ Attendance Failed');
-          return;
-        }
-        // On success:
-        show3DNotify(next === 'IN' ? 'in' : 'out', next === 'IN' ? '✅ IN Marked' : '⛔ OUT Marked');
-        updateInOutUI(employee_id);
-        // Auto attendance creation for Present (optional)
-        if (next === 'IN') {
-          createAttendance(employee_id);
-        }
-
-        // Show Daily Logs Popup
-        setTimeout(() => fetchAndShowDailyLogs(employee_id), 800);
+        // 2. Call Backend to Mark Attendance
+        frappe.call({
+          method: "smart_attendance.smart_attendance.api.custom_checkin_employee_id.mark_kiosk_attendance",
+          args: {
+            employee_id: employee_id,
+            log_type: explicit_type
+          },
+          callback: function (r) {
+            if (r.message && r.message.ok) {
+              const type = r.message.log_type;
+              show3DNotify(type === 'IN' ? 'in' : 'out', type === 'IN' ? '✅ IN Marked' : '⛔ OUT Marked');
+              updateInOutUI(employee_id);
+              setTimeout(() => fetchAndShowDailyLogs(employee_id), 800);
+            } else {
+              show3DNotify('error', r.message?.message || '❌ Attendance Failed');
+            }
+          },
+          error: function (r) {
+            show3DNotify('error', '❌ Request Error');
+          }
+        });
 
       } catch (e) {
         console.error(e);
