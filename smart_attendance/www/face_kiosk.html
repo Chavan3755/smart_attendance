@@ -473,7 +473,7 @@
 
   /* ✅ Show ONLY Holidays panel */
   .right .holidays-panel {
-    display: block !important;
+    display: none !important;
   }
 </style>
 
@@ -612,7 +612,7 @@
           <div class="left">
             <div class="field">
               <label class="label">Employee ID</label>
-              <input id="employee_id" class="input" type="text" value="" autocomplete="off" />
+              <input id="employee_id" class="input" type="text" value="" autocomplete="off" readonly />
             </div>
             <div class="camera" aria-live="polite">
               <div class="camera-inner">
@@ -1174,6 +1174,9 @@
               show3DNotify(type === 'IN' ? 'in' : 'out', type === 'IN' ? `✅ IN: ${name}` : `⛔ OUT: ${name}`);
 
               const detectedId = r.message.employee;
+
+              // ✅ Update Input
+              document.getElementById('employee_id').value = detectedId;
 
               updateInOutUI(detectedId);
               setTimeout(() => fetchAndShowDailyLogs(detectedId), 800);
