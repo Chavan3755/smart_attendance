@@ -18,7 +18,7 @@ def get_last_log(employee_id):
         "Employee Checkin",
         {"employee": employee_id},
         "log_type",
-        order_by="time desc"
+        order_by="creation desc"
     )
     return last_log or "OUT"
 
