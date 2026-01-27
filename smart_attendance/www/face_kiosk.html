@@ -1016,9 +1016,10 @@
           method: "smart_attendance.smart_attendance.api.custom_checkin_employee_id.safe_employee_checkin",
           args: { employee_id },
           callback: function (r) {
-            // ✅ CORRECT CHECK
+
             resolve(r?.message?.ok === true);
           },
+
           error: function () {
             resolve(false);
           }
@@ -1122,7 +1123,7 @@
               doctype: "Employee Checkin",
               fields: ["log_type"],
               filters: JSON.parse(filters),
-              order_by: "creation desc",
+              order_by: "time desc",
               limit_page_length: 1
             },
             callback: function (r) {
@@ -1190,7 +1191,7 @@
     /* =========================================================
        FINAL markAttendance (WITH VALIDATION)
        ========================================================= */
-    async function markAttendance(employee_id) {
+    async function markAttendance(employee_id, explicit_type = null) {
       try {
         // 1. Validate Employee Exists
         const exists = await employeeExists(employee_id);
@@ -1199,8 +1200,14 @@
           return;
         }
 
-        const last = await getLastLogType(employee_id);
-        const next = last === 'IN' ? 'OUT' : 'IN';
+        let next;
+        if (explicit_type) {
+          next = explicit_type;
+        } else {
+          const last = await getLastLogType(employee_id);
+          next = last === 'IN' ? 'OUT' : 'IN';
+        }
+
         const res = await createCheckin(employee_id, next);
         if (!res.ok) {
           show3DNotify('error', '❌ Attendance Failed');
@@ -1253,8 +1260,13 @@
       imgPreview.classList.remove('hidden');
       const emp = empInput.value.trim();
       if (!emp) { show3DNotify('error', '❌ Employee ID Required'); return; }
-      // Mark attendance (server-side)
-      markAttendance(emp);
+
+      // Auto-capture: prefer UI state if available, else toggle
+      let type = null;
+      if (!inoutBtn.classList.contains('hidden')) {
+        type = inoutBtn.innerText.includes('IN') ? 'IN' : 'OUT';
+      }
+      markAttendance(emp, type);
     }
 
     async function prepareCaptureCanvas() {
@@ -1271,13 +1283,19 @@
       ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
       imgPreview.src = canvas.toDataURL('image/jpeg', 0.86);
       imgPreview.classList.remove('hidden');
-      markAttendance(emp);
+
+      // Explicitly use the type shown on the in/out button
+      const type = inoutBtn.innerText.includes('IN') ? 'IN' : 'OUT';
+      markAttendance(emp, type);
     });
 
     inoutBtn.addEventListener('click', async () => {
       const emp = empInput.value.trim();
       if (!emp) { show3DNotify('error', '❌ Employee ID Required'); return; }
-      markAttendance(emp);
+
+      // Explicitly use the type shown on the button
+      const type = inoutBtn.innerText.includes('IN') ? 'IN' : 'OUT';
+      markAttendance(emp, type);
     });
 
     previewBtn.addEventListener('click', () => imgPreview.classList.toggle('hidden'));
