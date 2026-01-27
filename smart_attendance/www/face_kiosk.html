@@ -1135,28 +1135,48 @@
     /* =========================================================
        FINAL markAttendance (WITH VALIDATION)
        ========================================================= */
-    async function markAttendance(employee_id, explicit_type = null) {
+    async function markAttendance(employee_id, explicit_type = null, image_base64 = null) {
       try {
-        // 1. Validate Employee Exists
-        const exists = await employeeExists(employee_id);
-        if (!exists) {
-          show3DNotify('error', '❌ Employee not found');
-          return;
+        // 1. If Employee ID is provided, validate it exists (Optional optimization)
+        if (employee_id) {
+          const exists = await employeeExists(employee_id);
+          if (!exists) {
+            show3DNotify('error', '❌ Employee not found');
+            return;
+          }
+        } else {
+          // If no Employee ID, we MUST have an image
+          if (!image_base64) {
+            show3DNotify('error', '❌ Face or ID required');
+            return;
+          }
         }
 
-        // 2. Call Backend to Mark Attendance
+        // 2. Call Backend to Mark Attendance (Using Face Verification API)
+        // This API handles both:
+        // A) Known Employee ID + Face (Verification) -> not strictly doing this yet in frontend flow but backend supports it
+        // B) No Employee ID + Face (Identification/Search) -> THIS IS WHAT WE WANT
+        // C) Just Employee ID (Manual)? -> We should probably stick to `mark_attendance_by_face` for consistency or fallback.
+
+        // Actually, if we have an image, we should ALWAYS use mark_attendance_by_face to ensure face logs are created.
+
         frappe.call({
-          method: "smart_attendance.smart_attendance.api.custom_checkin_employee_id.mark_kiosk_attendance",
+          method: "smart_attendance.smart_attendance.api.face_verification.mark_attendance_by_face",
           args: {
-            employee_id: employee_id,
-            log_type: explicit_type
+            employee: employee_id,
+            image_base64: image_base64,
+            log_type: explicit_type || "AUTO"
           },
           callback: function (r) {
             if (r.message && r.message.ok) {
               const type = r.message.log_type;
-              show3DNotify(type === 'IN' ? 'in' : 'out', type === 'IN' ? '✅ IN Marked' : '⛔ OUT Marked');
-              updateInOutUI(employee_id);
-              setTimeout(() => fetchAndShowDailyLogs(employee_id), 800);
+              const name = r.message.employee_name || r.message.employee;
+              show3DNotify(type === 'IN' ? 'in' : 'out', type === 'IN' ? `✅ IN: ${name}` : `⛔ OUT: ${name}`);
+
+              const detectedId = r.message.employee;
+
+              updateInOutUI(detectedId);
+              setTimeout(() => fetchAndShowDailyLogs(detectedId), 800);
             } else {
               show3DNotify('error', r.message?.message || '❌ Attendance Failed');
             }
@@ -1219,10 +1239,10 @@
       imgPreview.src = dataUrl;
       imgPreview.classList.remove('hidden');
       const emp = empInput.value.trim();
-      if (!emp) { show3DNotify('error', '❌ Employee ID Required'); return; }
 
       // Auto-capture: Let backend decide IN/OUT
-      markAttendance(emp, null);
+      // Pass image!
+      markAttendance(emp, null, dataUrl);
     }
 
     async function prepareCaptureCanvas() {
@@ -1234,22 +1254,44 @@
     /* ---------- Button bindings ---------- */
     captureBtn.addEventListener('click', async () => {
       const emp = empInput.value.trim();
-      if (!emp) { show3DNotify('error', '❌ Employee ID Required'); return; }
+      // Remove Employee ID Required check
+
       await prepareCaptureCanvas();
       ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
-      imgPreview.src = canvas.toDataURL('image/jpeg', 0.86);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+      imgPreview.src = dataUrl;
       imgPreview.classList.remove('hidden');
 
       // Let backend decide
-      markAttendance(emp, null);
+      markAttendance(emp, null, dataUrl);
     });
 
     inoutBtn.addEventListener('click', async () => {
       const emp = empInput.value.trim();
-      if (!emp) { show3DNotify('error', '❌ Employee ID Required'); return; }
+      // For manual IN/OUT without capture, we might still want an image or at least ID.
+      // If no ID, we MUST capture.
+
+      let dataUrl = null;
+      if (!emp) {
+        await prepareCaptureCanvas();
+        ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
+        dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+      }
+
+      // If we have ID, we technically don't NEED face for manual button if we trust it, 
+      // but this is a face kiosk so let's always try to send face if available or allow fallback?
+      // For now, let's assume if they click the button, they want to mark.
+      // But `mark_attendance_by_face` REQUIRES image if no ID (and even with ID it compares).
+      // So we should always capture.
+
+      if (!dataUrl) {
+        await prepareCaptureCanvas();
+        ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
+        dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+      }
 
       // Let backend decide
-      markAttendance(emp, null);
+      markAttendance(emp, null, dataUrl);
     });
 
     previewBtn.addEventListener('click', () => imgPreview.classList.toggle('hidden'));
