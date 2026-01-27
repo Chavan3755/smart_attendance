@@ -1237,8 +1237,26 @@
       try {
         const last = await getLastLogType(employee_id);
         const next = last === 'IN' ? 'OUT' : 'IN';
-        if (next === 'IN') { inoutBtn.innerText = '✅ IN'; inoutBtn.className = 'in-btn'; inoutBadge.className = 'badge in'; inoutBadge.innerText = 'IN'; inoutBadge.classList.remove('hidden'); }
-        else { inoutBtn.innerText = '⛔ OUT'; inoutBtn.className = 'out-btn'; inoutBadge.className = 'badge out'; inoutBadge.innerText = 'OUT'; inoutBadge.classList.remove('hidden'); }
+
+        // Button shows NEXT action
+        if (next === 'IN') {
+          inoutBtn.innerText = '✅ IN';
+          inoutBtn.className = 'in-btn';
+        } else {
+          inoutBtn.innerText = '⛔ OUT';
+          inoutBtn.className = 'out-btn';
+        }
+
+        // Badge shows CURRENT status (last)
+        if (last === 'IN') {
+          inoutBadge.className = 'badge in';
+          inoutBadge.innerText = 'IN';
+        } else {
+          inoutBadge.className = 'badge out';
+          inoutBadge.innerText = 'OUT';
+        }
+        inoutBadge.classList.remove('hidden');
+
         // hide badge after short while
         setTimeout(() => inoutBadge.classList.add('hidden'), 1600);
       } catch (e) { console.error(e); }
