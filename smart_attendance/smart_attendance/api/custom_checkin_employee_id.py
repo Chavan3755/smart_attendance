@@ -14,18 +14,17 @@ def get_last_log(employee_id):
     if not employee_id:
         return "OUT"
         
-    # Use get_all to be absolutely sure of ordering
-    logs = frappe.get_all(
-        "Employee Checkin",
-        filters={"employee": employee_id},
-        fields=["log_type"],
-        order_by="creation desc",
-        limit=1,
-        ignore_permissions=True
-    )
+    # RAW SQL to bypass all permission/ORM layers
+    last_log = frappe.db.sql("""
+        SELECT log_type FROM `tabEmployee Checkin`
+        WHERE employee = %s
+        ORDER BY creation DESC
+        LIMIT 1
+    """, (employee_id,))
     
-    if logs:
-        return logs[0].log_type
+    if last_log and last_log[0][0]:
+        return last_log[0][0]
+        
     return "OUT"
 
 @frappe.whitelist(allow_guest=True)
