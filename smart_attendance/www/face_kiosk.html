@@ -1221,12 +1221,8 @@
       const emp = empInput.value.trim();
       if (!emp) { show3DNotify('error', '❌ Employee ID Required'); return; }
 
-      // Auto-capture: prefer UI state if available, else toggle
-      let type = null;
-      if (!inoutBtn.classList.contains('hidden')) {
-        type = inoutBtn.innerText.includes('IN') ? 'IN' : 'OUT';
-      }
-      markAttendance(emp, type);
+      // Auto-capture: Let backend decide IN/OUT
+      markAttendance(emp, null);
     }
 
     async function prepareCaptureCanvas() {
@@ -1244,18 +1240,16 @@
       imgPreview.src = canvas.toDataURL('image/jpeg', 0.86);
       imgPreview.classList.remove('hidden');
 
-      // Explicitly use the type shown on the in/out button
-      const type = inoutBtn.innerText.includes('IN') ? 'IN' : 'OUT';
-      markAttendance(emp, type);
+      // Let backend decide
+      markAttendance(emp, null);
     });
 
     inoutBtn.addEventListener('click', async () => {
       const emp = empInput.value.trim();
       if (!emp) { show3DNotify('error', '❌ Employee ID Required'); return; }
 
-      // Explicitly use the type shown on the button
-      const type = inoutBtn.innerText.includes('IN') ? 'IN' : 'OUT';
-      markAttendance(emp, type);
+      // Let backend decide
+      markAttendance(emp, null);
     });
 
     previewBtn.addEventListener('click', () => imgPreview.classList.toggle('hidden'));
