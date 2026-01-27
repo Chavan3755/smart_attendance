@@ -12,15 +12,21 @@ def check_employee_exists(employee_id):
 def get_last_log(employee_id):
     """Get the last log type for an employee (IN or OUT). Defaults to OUT (so next is IN)."""
     if not employee_id:
-        return "OUT" # Default state if no ID
+        return "OUT"
         
-    last_log = frappe.db.get_value(
+    # Use get_all to be absolutely sure of ordering
+    logs = frappe.get_all(
         "Employee Checkin",
-        {"employee": employee_id},
-        "log_type",
-        order_by="creation desc"
+        filters={"employee": employee_id},
+        fields=["log_type"],
+        order_by="creation desc",
+        limit=1,
+        ignore_permissions=True
     )
-    return last_log or "OUT"
+    
+    if logs:
+        return logs[0].log_type
+    return "OUT"
 
 @frappe.whitelist(allow_guest=True)
 def mark_kiosk_attendance(employee_id, log_type=None):
@@ -50,11 +56,12 @@ def mark_kiosk_attendance(employee_id, log_type=None):
     })
     checkin.insert(ignore_permissions=True)
 
-    # Auto-create Attendance Record for 'IN' (or update 'OUT' functionality if needed later)
-    # The requirement is usually:
-    # IN -> Creates 'Present' attendance for today if not exists
+    # Auto-create Attendance Record for 'IN'
     if log_type == "IN":
         _create_attendance_if_missing(employee_id)
+    
+    # 🔴 CRITICAL: Commit immediately so subsequent reads see it
+    frappe.db.commit()
 
     return {
         "ok": True,
