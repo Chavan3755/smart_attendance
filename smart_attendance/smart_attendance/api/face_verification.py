@@ -20,16 +20,16 @@ def _get_employee_encoding(employee: str):
     )
 
     if not row:
-        frappe.throw("Employee ka enrolled face (encoding) nahi mila.")
+        frappe.throw("Employee enrolled face (encoding) not found.")
 
     encoding_str = row[0]["encoding"]
     if not encoding_str:
-        frappe.throw("Employee ke liye encoding empty hai.")
+        frappe.throw("Employee encoding is empty.")
 
     try:
         vec = np.fromstring(encoding_str, sep=",", dtype=float)
     except Exception:
-        frappe.throw("Saved encoding corrupt hai.")
+        frappe.throw("Saved encoding is corrupt.")
 
     return vec
 
@@ -118,7 +118,7 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
         return {
             "ok": False,
             "reason": "no_face",
-            "message": "Image me face detect nahi hua.",
+            "message": "No face detected in image.",
         }
 
     detected_employee = employee
@@ -129,7 +129,7 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
         # --- 1:N Search Mode ---
         candidates = _get_all_encodings()
         if not candidates:
-             return {"ok": False, "message": "System me koi registered faces nahi hain."}
+             return {"ok": False, "message": "No registered faces in system."}
              
         known_encodings = [c[1] for c in candidates]
         known_ids = [c[0] for c in candidates]
@@ -150,7 +150,7 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
                 "reason": "face_not_matched",
                 "distance": min_dist,
                 "tolerance": float(tolerance),
-                "message": "Face match nahi hua (User not found).",
+                "message": "Face not matched (User not found).",
             }
             
     else:
@@ -164,7 +164,7 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
                 "reason": "face_not_matched",
                 "distance": match_distance,
                 "tolerance": float(tolerance),
-                "message": "Face match nahi hua.",
+                "message": "Face not matched.",
             }
 
     # 3️⃣ Create Employee Checkin (Real Attendance)

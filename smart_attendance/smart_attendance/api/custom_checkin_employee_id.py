@@ -40,6 +40,20 @@ def mark_kiosk_attendance(employee_id, log_type=None):
     if not frappe.db.exists("Employee", employee_id):
         return {"ok": False, "message": "Employee not found"}
 
+    # 30-Second Cooldown Check
+    last_log_time = frappe.db.get_value("Employee Checkin", 
+        {"employee": employee_id}, 
+        "time", 
+        order_by="creation desc"
+    )
+    
+    if last_log_time:
+        # Convert to datetime if it's a string (though frappe usually returns datetime object)
+        # Assuming last_log_time is datetime or similar comparable
+        diff = (frappe.utils.now_datetime() - frappe.utils.get_datetime(last_log_time)).total_seconds()
+        if diff < 30:
+            return {"ok": False, "message": f"Please wait {int(30 - diff)}s before next check-in."}
+
     # Determine log type if not provided
     if not log_type:
         last = get_last_log(employee_id)

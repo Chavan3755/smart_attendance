@@ -971,6 +971,7 @@
     // Possible Challenges
     const CHALLENGES = [
       { type: 'BLINK', text: "Please BLINK Eyes 😉", icon: "😉" },
+      { type: 'MOUTH', text: "Open MOUTH Wide 😮", icon: "😮" },
       { type: 'TURN_LEFT', text: "Turn Head LEFT ⬅️", icon: "⬅️" },
       { type: 'TURN_RIGHT', text: "Turn Head RIGHT ➡️", icon: "➡️" }
     ];
@@ -1039,26 +1040,30 @@
     function verifyAction(type, landmarks) {
       const ear = getEAR(landmarks);
       const yaw = getYaw(landmarks);
+      const mar = getMAR(landmarks); // Mouth Aspect Ratio
+      const roll = getRoll(landmarks); // Head Pitch/Roll (Tilt)
 
-      // 1. BLINK: EAR < 0.35 (Relaxed from 0.26)
+      // 1. BLINK: EAR < 0.35 (Relaxed)
       if (type === 'BLINK') {
-        // Should be looking somewhat straight + eyes closed
+        // looking straight + eyes closed
         return (Math.abs(yaw) < 0.30 && ear < 0.35);
       }
 
-      // 2. TURN LEFT: Yaw < -0.15 (Relaxed from -0.20)
-      // Let's calibrate:
-      // Nose (30) vs Face Width
-      // Left is when nose moves towards left cheek (lower x)
-      if (type === 'TURN_LEFT') {
-        // Check if user turned enough to left
-        // Adjust threshold based on testing
-        return (yaw < -0.15);
+      // 2. MOUTH: MAR > 0.5 (Open)
+      if (type === 'MOUTH') {
+        return (mar > 0.50);
       }
 
-      // 3. TURN RIGHT: Yaw > 0.15 (Relaxed from 0.20)
+      // 3. TURN LEFT: Yaw < -0.15
+      // Constraint: Head must be level (Roll < 0.2 rad ~ 11 deg).
+      // Tilting phone usually creates high roll.
+      if (type === 'TURN_LEFT') {
+        return (yaw < -0.15 && Math.abs(roll) < 0.25);
+      }
+
+      // 4. TURN RIGHT: Yaw > 0.15
       if (type === 'TURN_RIGHT') {
-        return (yaw > 0.15);
+        return (yaw > 0.15 && Math.abs(roll) < 0.25);
       }
 
       return false;
@@ -1106,6 +1111,42 @@
       const leftEAR = getEyeRatio(leftRef);
       const rightEAR = getEyeRatio(rightRef);
       return (leftEAR + rightEAR) / 2.0;
+    }
+
+    function getMAR(landmarks) {
+      // Mouth: 48-67
+      // Inner Lip: 60-67 (Better for openness)
+      // 60-64 (Horiz), 61-67, 62-66, 63-65 (Vert)
+
+      // Let's use outer lip for easier detection at distance:
+      // 48 (Left Corner), 54 (Right Corner) -> Width
+      // 51 (Top center), 57 (Bottom center) -> Height
+
+      const p = landmarks;
+      // Verticals: (50-58), (51-57), (52-56)
+      const v1 = Math.hypot(p[50].x - p[58].x, p[50].y - p[58].y);
+      const v2 = Math.hypot(p[51].x - p[57].x, p[51].y - p[57].y);
+      const v3 = Math.hypot(p[52].x - p[56].x, p[52].y - p[56].y);
+
+      // Horizontal: 48-54
+      const h = Math.hypot(p[48].x - p[54].x, p[48].y - p[54].y);
+
+      if (h === 0) return 0;
+      return (v1 + v2 + v3) / (3.0 * h);
+    }
+
+    function getRoll(landmarks) {
+      // Angle between eyes
+      // Left Eye: 36 (outer corner)
+      // Right Eye: 45 (outer corner)
+      const left = landmarks[36];
+      const right = landmarks[45];
+
+      const dy = right.y - left.y;
+      const dx = right.x - left.x;
+
+      // Atan2 returns radians.
+      return Math.atan2(dy, dx);
     }
 
 
