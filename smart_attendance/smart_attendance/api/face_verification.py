@@ -102,7 +102,7 @@ def attach_image_to_fal(fal_name, image_base64):
 # ------------ ✅ MAIN API ------------
 
 @frappe.whitelist()
-def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_type: str = "AUTO", tolerance: float = 0.5):
+def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_type: str = "AUTO", tolerance: float = 0.6):
     """
     Inputs:
         employee: Optional. If provided, verifies against this employee. If None, searches all faces.
