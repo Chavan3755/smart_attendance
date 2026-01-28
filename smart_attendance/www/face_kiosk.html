@@ -966,6 +966,7 @@
      * ----------------------------------------------------------- */
     let currentChallenge = null;
     let challengeStartTime = 0;
+    let verifiedStartTime = 0; // Track hold duration
     const CHALLENGE_TIMEOUT = 4000; // 4 seconds to perform action
 
     // Possible Challenges
@@ -983,6 +984,8 @@
 
       // 1. If no challenge active, pick one randomly
       if (!currentChallenge) {
+        verifiedStartTime = 0; // Reset hold
+
         // Wait for face to be somewhat center/stable before issuing challenge
         const yaw = getYaw(landmarks);
         // Relaxed "Look Straight" from 0.15 to 0.25 to avoid stuck state
@@ -1013,16 +1016,33 @@
       const isVerified = verifyAction(currentChallenge.type, landmarks);
 
       if (isVerified) {
-        detecting = false; // Pause
-        hint.innerText = "Verified! " + currentChallenge.icon;
-        show3DNotify('in', `${currentChallenge.icon} Verified`);
+        if (verifiedStartTime === 0) {
+          verifiedStartTime = now;
+        }
 
-        setTimeout(() => {
-          handleAutoCapture(det);
-          resetChallenge(null); // Clear for next person
-          detecting = true;
-        }, 600);
+        const elapsed = now - verifiedStartTime;
+        const required = 800; // 800ms hold
+
+        if (elapsed > required) {
+          // SUCCESS
+          detecting = false; // Pause
+          hint.innerText = "Verified! " + currentChallenge.icon;
+          show3DNotify('in', `${currentChallenge.icon} Verified`);
+
+          setTimeout(() => {
+            handleAutoCapture(det);
+            resetChallenge(null);
+            detecting = true;
+          }, 600);
+        } else {
+          // HOLDING...
+          const progress = Math.min(100, (elapsed / required) * 100);
+          hint.innerText = `Hold it... ${Math.floor(progress)}%`;
+        }
+
       } else {
+        // Action broken/not met
+        verifiedStartTime = 0;
         // Keep showing instruction
         hint.innerText = currentChallenge.text;
       }
