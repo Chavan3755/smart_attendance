@@ -473,7 +473,7 @@
 
   /* ✅ Show ONLY Holidays panel */
   .right .holidays-panel {
-  display: block !important;
+    display: block !important;
   }
 </style>
 
@@ -944,25 +944,67 @@
         }
 
         // ✅ Single face
-        hint.style.display = "none";
+        hint.style.display = "block";
+        hint.innerText = "Please BLINK to mark attendance";
 
-        // 🧠 Stability check (1 sec)
+        // 🧠 Liveness Check (Blink)
         if (feature_autocapture.checked) {
-          const now = Date.now();
-          if (!stableSince) stableSince = now;
+          const landmarks = dets[0].landmarks.positions;
+          const ear = getEAR(landmarks);
 
-          if (now - stableSince > 1000) {
-            handleAutoCapture(dets[0]);
-            stableSince = null;
+          // Simple State Machine for Blink
+          // 1. Eyes Open (EAR > 0.30)
+          // 2. Eyes Closed (EAR < 0.25) -> Blink Start
+          // 3. Eyes Open (EAR > 0.30) -> Blink End -> CAPTURE
+
+          if (!stableSince && ear > 0.30) {
+            stableSince = true; // Ready for blink
+          }
+
+          if (stableSince) {
+            if (ear < 0.26) {
+              detecting = false; // Pause detection temporarily to capture
+              hint.innerText = "Blink Detected! Capturing...";
+              show3DNotify('in', '😉 Blink Verified');
+              setTimeout(() => {
+                handleAutoCapture(dets[0]);
+                stableSince = false;
+                detecting = true;
+              }, 400);
+            }
           }
         }
-
       } catch (e) {
         console.warn('detect error', e);
       }
 
       requestAnimationFrame(detectionLoop);
     }
+
+    /* ---------- Liveness / Blink Helpers ---------- */
+    function getEAR(landmarks) {
+      // Left Eye: 36-41
+      // Right Eye: 42-47
+      const leftRef = [36, 37, 38, 39, 40, 41];
+      const rightRef = [42, 43, 44, 45, 46, 47];
+
+      const getEyeRatio = (indices) => {
+        const p = indices.map(i => landmarks[i]);
+        // Vertical 1: p1-p5
+        const v1 = Math.hypot(p[1].x - p[5].x, p[1].y - p[5].y);
+        // Vertical 2: p2-p4
+        const v2 = Math.hypot(p[2].x - p[4].x, p[2].y - p[4].y);
+        // Horizontal: p0-p3
+        const h = Math.hypot(p[0].x - p[3].x, p[0].y - p[3].y);
+        return (v1 + v2) / (2.0 * h);
+      };
+
+      const leftEAR = getEyeRatio(leftRef);
+      const rightEAR = getEyeRatio(rightRef);
+      return (leftEAR + rightEAR) / 2.0;
+    }
+
+
 
     detectionLoop();
 
