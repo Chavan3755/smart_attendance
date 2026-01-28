@@ -945,43 +945,150 @@
 
         // ✅ Single face
         hint.style.display = "block";
-        hint.innerText = "Please BLINK to mark attendance";
 
-        // 🧠 Liveness Check (Blink)
+        // 🧠 Randomized Liveness Challenge
         if (feature_autocapture.checked) {
-          const landmarks = dets[0].landmarks.positions;
-          const ear = getEAR(landmarks);
-
-          // Simple State Machine for Blink
-          // 1. Eyes Open (EAR > 0.30)
-          // 2. Eyes Closed (EAR < 0.25) -> Blink Start
-          // 3. Eyes Open (EAR > 0.30) -> Blink End -> CAPTURE
-
-          if (!stableSince && ear > 0.30) {
-            stableSince = true; // Ready for blink
-          }
-
-          if (stableSince) {
-            if (ear < 0.26) {
-              detecting = false; // Pause detection temporarily to capture
-              hint.innerText = "Blink Detected! Capturing...";
-              show3DNotify('in', '😉 Blink Verified');
-              setTimeout(() => {
-                handleAutoCapture(dets[0]);
-                stableSince = false;
-                detecting = true;
-              }, 400);
-            }
-          }
+          runLivenessChallenge(dets[0]);
+        } else {
+          hint.innerText = "Align face & Click Capture";
         }
+
       } catch (e) {
         console.warn('detect error', e);
       }
 
       requestAnimationFrame(detectionLoop);
+    } // End detectionLoop
+
+
+    /* -----------------------------------------------------------
+     *  🛡️ RANDOMIZED LIVENESS CHALLENGE
+     * ----------------------------------------------------------- */
+    let currentChallenge = null;
+    let challengeStartTime = 0;
+    const CHALLENGE_TIMEOUT = 4000; // 4 seconds to perform action
+
+    // Possible Challenges
+    const CHALLENGES = [
+      { type: 'BLINK', text: "Please BLINK Eyes 😉", icon: "😉" },
+      { type: 'TURN_LEFT', text: "Turn Head LEFT ⬅️", icon: "⬅️" },
+      { type: 'TURN_RIGHT', text: "Turn Head RIGHT ➡️", icon: "➡️" }
+    ];
+
+    function runLivenessChallenge(det) {
+      const now = Date.now();
+      const hint = document.getElementById("camera-hint");
+      const landmarks = det.landmarks.positions;
+
+      // 1. If no challenge active, pick one randomly
+      if (!currentChallenge) {
+        // Wait for face to be somewhat center/stable before issuing challenge
+        const yaw = getYaw(landmarks);
+        // Relaxed "Look Straight" from 0.15 to 0.25 to avoid stuck state
+        if (Math.abs(yaw) > 0.25) {
+          hint.innerText = "Look Straight First 😐";
+          return;
+        }
+
+        const idx = Math.floor(Math.random() * CHALLENGES.length);
+        currentChallenge = CHALLENGES[idx];
+        challengeStartTime = now;
+
+        hint.innerText = currentChallenge.text;
+        hint.style.fontSize = "22px";
+        hint.style.fontWeight = "bold";
+        // Play sound
+        speak(currentChallenge.text);
+        return;
+      }
+
+      // 2. Check Timeout
+      if (now - challengeStartTime > CHALLENGE_TIMEOUT) {
+        resetChallenge("Too Slow! ❌");
+        return;
+      }
+
+      // 3. Verify Action
+      const isVerified = verifyAction(currentChallenge.type, landmarks);
+
+      if (isVerified) {
+        detecting = false; // Pause
+        hint.innerText = "Verified! " + currentChallenge.icon;
+        show3DNotify('in', `${currentChallenge.icon} Verified`);
+
+        setTimeout(() => {
+          handleAutoCapture(det);
+          resetChallenge(null); // Clear for next person
+          detecting = true;
+        }, 600);
+      } else {
+        // Keep showing instruction
+        hint.innerText = currentChallenge.text;
+      }
     }
 
-    /* ---------- Liveness / Blink Helpers ---------- */
+    function resetChallenge(failMsg) {
+      currentChallenge = null;
+      const hint = document.getElementById("camera-hint");
+      if (failMsg) {
+        hint.innerText = failMsg;
+        show3DNotify('error', failMsg);
+      }
+    }
+
+    function verifyAction(type, landmarks) {
+      const ear = getEAR(landmarks);
+      const yaw = getYaw(landmarks);
+
+      // 1. BLINK: EAR < 0.35 (Relaxed from 0.26)
+      if (type === 'BLINK') {
+        // Should be looking somewhat straight + eyes closed
+        return (Math.abs(yaw) < 0.30 && ear < 0.35);
+      }
+
+      // 2. TURN LEFT: Yaw < -0.15 (Relaxed from -0.20)
+      // Let's calibrate:
+      // Nose (30) vs Face Width
+      // Left is when nose moves towards left cheek (lower x)
+      if (type === 'TURN_LEFT') {
+        // Check if user turned enough to left
+        // Adjust threshold based on testing
+        return (yaw < -0.15);
+      }
+
+      // 3. TURN RIGHT: Yaw > 0.15 (Relaxed from 0.20)
+      if (type === 'TURN_RIGHT') {
+        return (yaw > 0.15);
+      }
+
+      return false;
+    }
+
+    /* ---------- Geometry Helpers ---------- */
+    // Calculate Yaw (Head Turn) ratio
+    // Returns range approx -0.5 (Left) to +0.5 (Right), 0 is center
+    function getYaw(landmarks) {
+      // Nose tip: 30
+      // Left Face Edge: 0
+      // Right Face Edge: 16
+      const nose = landmarks[30].x;
+      const leftEdge = landmarks[0].x;
+      const rightEdge = landmarks[16].x;
+
+      const faceWidth = rightEdge - leftEdge;
+      if (faceWidth === 0) return 0;
+
+      // Normalized nose position (0.0 to 1.0)
+      const relNose = (nose - leftEdge) / faceWidth;
+
+      // Center is 0.5. 
+      // < 0.5 is Looking Left (Nose closer to left edge)
+      // > 0.5 is Looking Right (Nose closer to right edge)
+
+      // Let's shift so 0 is center:
+      return (relNose - 0.5);
+    }
+
     function getEAR(landmarks) {
       // Left Eye: 36-41
       // Right Eye: 42-47
@@ -990,11 +1097,8 @@
 
       const getEyeRatio = (indices) => {
         const p = indices.map(i => landmarks[i]);
-        // Vertical 1: p1-p5
         const v1 = Math.hypot(p[1].x - p[5].x, p[1].y - p[5].y);
-        // Vertical 2: p2-p4
         const v2 = Math.hypot(p[2].x - p[4].x, p[2].y - p[4].y);
-        // Horizontal: p0-p3
         const h = Math.hypot(p[0].x - p[3].x, p[0].y - p[3].y);
         return (v1 + v2) / (2.0 * h);
       };
