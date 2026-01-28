@@ -1042,10 +1042,10 @@
       const yaw = getYaw(landmarks);
       const mar = getMAR(landmarks); // Mouth Aspect Ratio
       const roll = getRoll(landmarks); // Head Pitch/Roll (Tilt)
+      const pitch = getPitch(landmarks); // Head Nod (Up/Down)
 
-      // 1. BLINK: EAR < 0.35 (Relaxed)
+      // 1. BLINK: EAR < 0.35
       if (type === 'BLINK') {
-        // looking straight + eyes closed
         return (Math.abs(yaw) < 0.30 && ear < 0.35);
       }
 
@@ -1055,15 +1055,16 @@
       }
 
       // 3. TURN LEFT: Yaw < -0.15
-      // Constraint: Head must be level (Roll < 0.2 rad ~ 11 deg).
-      // Tilting phone usually creates high roll.
+      // STRICT CONSTRAINT: 
+      // Roll < 0.12 (~7 deg). Phone twists cause high roll.
+      // Pitch < 0.15 (~8 deg). Phone twists cause pitch.
       if (type === 'TURN_LEFT') {
-        return (yaw < -0.15 && Math.abs(roll) < 0.25);
+        return (yaw < -0.15 && Math.abs(roll) < 0.12 && Math.abs(pitch) < 0.15);
       }
 
       // 4. TURN RIGHT: Yaw > 0.15
       if (type === 'TURN_RIGHT') {
-        return (yaw > 0.15 && Math.abs(roll) < 0.25);
+        return (yaw > 0.15 && Math.abs(roll) < 0.12 && Math.abs(pitch) < 0.15);
       }
 
       return false;
@@ -1092,6 +1093,33 @@
 
       // Let's shift so 0 is center:
       return (relNose - 0.5);
+    }
+
+    // Calculate Pitch (Head Nod)
+    function getPitch(landmarks) {
+      // Simple 2D approximation:
+      // Compare Nose Tip (30) vertical position relative to Eyes and Chin
+      // Top: Eye Center (midpoint of 36-39 and 42-45)
+      // Bottom: Chin (8)
+
+      const noseY = landmarks[30].y;
+      const chinY = landmarks[8].y;
+      const leftEyeY = landmarks[36].y; // outer corner
+      const rightEyeY = landmarks[45].y; // outer corner
+      const eyesY = (leftEyeY + rightEyeY) / 2;
+
+      const faceHeight = chinY - eyesY;
+      if (faceHeight === 0) return 0;
+
+      // Ratio of Nose Position
+      const noseRatio = (noseY - eyesY) / faceHeight;
+
+      // Calibrated Center (Looking Straight): ~0.35 - 0.45
+      // < 0.35 means Looking UP (Pitch Up)
+      // > 0.45 means Looking DOWN (Pitch Down)
+
+      // Normalize roughly to 0 center (0.4 base)
+      return (noseRatio - 0.4);
     }
 
     function getEAR(landmarks) {
