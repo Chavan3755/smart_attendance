@@ -28,17 +28,21 @@ def _get_all_employee_images():
     
     data = []
     for r in rows:
-        # face_image is like "/files/abc.jpg"
-        # We need absolute path: .../sites/site1/public/files/abc.jpg
+        # face_image is like "/files/abc.jpg" or "/private/files/abc.jpg"
         relative_path = r.face_image
-        if relative_path.startswith("/files/"):
-             # get_site_path("public", "files") -> .../public/files
+        
+        full_path = None
+        
+        if relative_path.startswith("/private/files/"):
+             filename = relative_path.replace("/private/files/", "")
+             full_path = get_site_path("private", "files", filename)
+             
+        elif relative_path.startswith("/files/"):
              filename = relative_path.replace("/files/", "")
-             # We can use frappe.get_site_path to be safe
              full_path = get_site_path("public", "files", filename)
              
-             if os.path.exists(full_path):
-                 data.append((r.employee, full_path))
+        if full_path and os.path.exists(full_path):
+             data.append((r.employee, full_path))
     
     return data
 
@@ -138,70 +142,90 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
 
 
         # 3️⃣ IDENTIFY / VERIFY
-        detected_employee = employee
-        match_distance = 1.0 # default high
-        matched_model = "VGG-Face"
+        # 3️⃣ IDENTIFY / VERIFY using EMBEDDINGS (Faster & More Reliable)
+        
+        # A. Extract Embedding from Input
+        try:
+            # represent returns list of dicts: [{"embedding": [...], ...}]
+            input_embedding_objs = DeepFace.represent(
+                img_path=temp_img_path,
+                model_name="VGG-Face",
+                enforce_detection=True,
+                detector_backend="opencv"
+            )
+            
+            if not input_embedding_objs:
+                 return {"ok": False, "message": "Face features could not be extracted."}
+                 
+            input_vector = input_embedding_objs[0]["embedding"]
+            
+        except Exception as e:
+            frappe.log_error(f"DeepFace Represent Error: {e}")
+            return {"ok": False, "message": "Face feature extraction failed."}
 
-        # List of candidate images
-        # Strategy: We assume we need to iterate to be safe and explicit
-        candidates = _get_all_employee_images() # Returns (emp_id, path)
+        detected_employee = employee
+        match_distance = 1.0 
+        
+        # B. Fetch Stored Encodings
+        # We fetch (employee, encoding_json) from DB
+        # Only those with encodings
+        candidates = frappe.db.sql("""
+            SELECT employee, encoding 
+            FROM `tabEmployee Face` 
+            WHERE encoding IS NOT NULL AND encoding != ''
+        """, as_dict=True)
         
         if not candidates:
-             return {"ok": False, "message": "No registered faces (with images) found in system."}
+             return {"ok": False, "message": "No registered face data found."}
 
         best_match_emp = None
         best_match_dist = 100.0
         
-        # Filter if employee known
-        target_candidates = candidates
-        if employee:
-             target_candidates = [c for c in candidates if c[0] == employee]
-             if not target_candidates:
-                 # Fallback: Maybe they have encoding but no image? 
-                 # Current plan relies on image. Return error to force proper enrollment.
-                 return {"ok": False, "message": f"Employee {employee} has no registered face image."}
+        # Helper: Cosine Distance
+        def find_cosine_distance(source_representation, test_representation):
+            a = np.matmul(np.transpose(source_representation), test_representation)
+            b = np.sum(np.multiply(source_representation, source_representation))
+            c = np.sum(np.multiply(test_representation, test_representation))
+            return 1 - (a / (np.sqrt(b) * np.sqrt(c)))
 
-        # Identify loop
-        found_match = False
+        # C. Compare against Candidates
+        import json
         
-        for emp_id, db_img_path in target_candidates:
+        for cand in candidates:
+            # If explicit employee requested, filter
+            if employee and cand.employee != employee:
+                continue
+                
             try:
-                # verify returns dict: {"verified": bool, "distance": float, ...}
-                result = DeepFace.verify(
-                    img1_path=temp_img_path,
-                    img2_path=db_img_path,
-                    model_name="VGG-Face",
-                    distance_metric="cosine",
-                    enforce_detection=False
-                )
+                # Parse stored encoding (string -> list)
+                db_vector = json.loads(cand.encoding)
                 
-                dist = result.get("distance", 1.0)
-                # verified = result.get("verified", False)
+                # Compare
+                dist = find_cosine_distance(input_vector, db_vector)
                 
-                # Check better match
                 if dist < best_match_dist:
                     best_match_dist = dist
-                    best_match_emp = emp_id
-                
-                # Early exit if excellent match? (e.g. < 0.20)
+                    best_match_emp = cand.employee
+                    
+                # Optimization: Break if very close match
                 if dist < 0.20:
-                     break
-                     
+                    break
+                    
             except Exception as e:
                 continue
-        
-        # Final Check against Tolerance
+
+        # D. Validate Match
         if best_match_dist <= float(tolerance):
             detected_employee = best_match_emp
             match_distance = best_match_dist
         else:
-            return {
-                "ok": False,
-                "reason": "face_not_matched",
-                "distance": best_match_dist,
-                "tolerance": float(tolerance),
-                "message": "Face not recognized."
-            }
+             return {
+                 "ok": False,
+                 "reason": "face_not_matched",
+                 "distance": best_match_dist,
+                 "tolerance": float(tolerance),
+                 "message": "Face not recognized."
+             }
 
         # 4️⃣ MARK ATTENDANCE
         kiosk_result = mark_kiosk_attendance(detected_employee, log_type if log_type != "AUTO" else None)
