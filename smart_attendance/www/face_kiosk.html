@@ -975,12 +975,11 @@
 
     const noseHistory = [];
     function checkStability(landmarks) {
-      const nose = landmarks[30]; // Point 30 is nose tip
+      const nose = landmarks[30];
       noseHistory.push(nose);
       if (noseHistory.length > 5) noseHistory.shift();
-      if (noseHistory.length < 5) return true; // not enough data
+      if (noseHistory.length < 5) return true;
 
-      // Calculate max movement
       let maxDist = 0;
       for (let i = 1; i < noseHistory.length; i++) {
         const dx = noseHistory[i].x - noseHistory[i - 1].x;
@@ -988,20 +987,15 @@
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist > maxDist) maxDist = dist;
       }
-
-      // Tolerance: If any movement > 10px (relative? need to normalize)
-      // Landmarks are naturally in image coords. face-api usually normalized if we use normalized results?
-      // Actually here landmarks are resized to canvas dims.
-      // Let's say maxDist should be small. > 5-10 implies movement.
-      return maxDist < 12;
+      // Relaxed Stability Threshold: 24px (was 12)
+      // This stops "wild waving" but allows natural breathing/micro-movements
+      return maxDist < 24;
     }
 
     // States: 
-    // 0 = Waiting for 1st Blink (Open)
-    // 1 = 1st Blink Down (Closed)
-    // 2 = 1st Blink Up (Open again) -> Wait for 2nd
-    // 3 = 2nd Blink Down (Closed)
-    // 4 = 2nd Blink Up (Verified)
+    // 0 = Waiting for Blink (Open)
+    // 1 = Blink Down (Closed)
+    // 2 = Blink Up (Verified)
     let blinkState = 0;
     let blinkStateTime = 0;
 
@@ -1014,93 +1008,68 @@
       const hint = document.getElementById("camera-hint");
 
       const rawEar = getEAR(det.landmarks.positions);
-      const ear = getSmoothedEAR(rawEar); // Use averaged EAR
+      const ear = getSmoothedEAR(rawEar);
 
       // Timeout Reset (if stuck in a state too long)
       if (blinkState > 0 && now - blinkStateTime > 3000) {
         blinkState = 0;
         blinkStateTime = 0;
-        hint.innerText = "Timeout. Blinks too slow.";
+        hint.innerText = "Timeout. Try Again.";
         return;
       }
 
-      // STATE MACHINE
+      // 1. POSE CHECK (Relaxed)
+      const yaw = getYaw(det.landmarks.positions);
+      if (Math.abs(yaw) > 0.3) { // Allowed 0.3 (approx 20 deg)
+        hint.innerText = "Look Straight 😐";
+        return;
+      }
+
+      // 2. STABILITY CHECK
+      // Only enforce strict stability when WAITING for blink. 
+      // During blink (State 1), eyes move, so we relax check or skip it?
+      // Actually nose shouldn't move much during blink.
+      if (!checkStability(det.landmarks.positions)) {
+        hint.innerText = "Hold Camera Steady ✋";
+        return;
+      }
+
+      // STATE MACHINE: SINGLE BLINK
       if (blinkState === 0) {
-        // Waiting for start
-        hint.innerText = "Please BLINK Eyes (2 Times) 😉";
+        hint.innerText = "Please BLINK Naturally 😉";
         hint.style.color = "#fff";
 
-        // 1. POSE CHECK: Must look straight
-        const yaw = getYaw(det.landmarks.positions);
-        const pitch = getPitch(det.landmarks.positions);
-        if (Math.abs(yaw) > 0.15 || Math.abs(pitch) > 0.15) {
-          hint.innerText = "Look Straight First 😐";
-          return;
-        }
-
-        // 2. STABILITY CHECK: Face must be still
-        if (!checkStability(det.landmarks.positions)) {
-          hint.innerText = "Hold Still...";
-          return;
-        }
-
         if (ear < THRESH_CLOSED) {
-          // Started closed?
-          hint.innerText = "Open Eyes Wide First 👁️";
+          hint.innerText = "Open Eyes 👁️";
         }
 
-        // Detect 1st Blink Down
-        if (ear < THRESH_CLOSED && checkStability(det.landmarks.positions)) {
+        // Detect Blink Down
+        if (ear < THRESH_CLOSED) {
           blinkState = 1;
           blinkStateTime = now;
-          hint.innerText = "1st Blink...";
-          // Tiny haptic/sound
-          playTone(600, 50, 'sine', 0.05);
+          hint.innerText = "Blinking...";
         }
 
       } else if (blinkState === 1) {
-        // Waiting for 1st Open
-        if (ear > THRESH_OPEN) {
-          blinkState = 2;
-          blinkStateTime = now;
-          hint.innerText = "Blink Again... 😉";
-        }
+        // Waiting for Open (Finish)
+        hint.innerText = "Opening...";
 
-      } else if (blinkState === 2) {
-
-        if (!checkStability(det.landmarks.positions)) {
-          // If they start moving wildly between blinks, maybe reset?
-          // For now, just wait for stability before accepting down
-          hint.innerText = "Hold Still...";
-          return;
-        }
-
-        // Waiting for 2nd Blink Down
-        if (ear < THRESH_CLOSED) {
-          blinkState = 3;
-          blinkStateTime = now;
-          hint.innerText = "2nd Blink...";
-          playTone(600, 50, 'sine', 0.05);
-        }
-
-      } else if (blinkState === 3) {
-        // Waiting for 2nd Open (Finish)
         if (ear > THRESH_OPEN) {
           // SUCCESS!
-          blinkState = 4;
+          blinkState = 2; // Verified
 
-          hint.innerText = "Verified! Live Face Detected ✅";
+          hint.innerText = "Verified! Capturing... 📸";
           hint.style.color = "#4ade80";
-          show3DNotify('in', `😉 Double Blink Verified`);
+          show3DNotify('in', `😉 Liveness Confirmed`);
 
           playSuccessTone('soft');
           isLivenessConfirmed = true;
-          blinkState = 0; // Reset
+          blinkState = 0;
 
           if (feature_autocapture.checked) {
             setTimeout(() => {
               handleAutoCapture(det);
-            }, 500);
+            }, 400);
           }
         }
       }
