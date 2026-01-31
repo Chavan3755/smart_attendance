@@ -905,6 +905,7 @@
     // ---------- AI helpers ----------
     let stableSince = null;
     let detecting = true;
+    let isLivenessConfirmed = false; // 🔒 Security Flag
 
     const detectOptions = new faceapi.TinyFaceDetectorOptions({
       inputSize: 256,
@@ -926,10 +927,10 @@
 
         const hint = document.getElementById("camera-hint");
 
-        // ❌ No face
         if (!dets || dets.length === 0) {
           hint.style.display = "block";
           stableSince = null;
+          isLivenessConfirmed = false; // Reset security
           requestAnimationFrame(detectionLoop);
           return;
         }
@@ -946,12 +947,9 @@
         // ✅ Single face
         hint.style.display = "block";
 
-        // 🧠 Randomized Liveness Challenge
-        if (feature_autocapture.checked) {
-          runLivenessChallenge(dets[0]);
-        } else {
-          hint.innerText = "Align face & Click Capture";
-        }
+        // 🧠 ALWAYS Run Liveness Challenge (Security)
+        // This ensures photos cannot trigger standard flow
+        runLivenessChallenge(dets[0]);
 
       } catch (e) {
         console.warn('detect error', e);
@@ -1025,15 +1023,24 @@
 
         if (elapsed > required) {
           // SUCCESS
-          detecting = false; // Pause
+          // detecting = false; // Don't pause yet, wait for capture
           hint.innerText = "Verified! " + currentChallenge.icon;
           show3DNotify('in', `${currentChallenge.icon} Verified`);
 
-          setTimeout(() => {
-            handleAutoCapture(det);
-            resetChallenge(null);
-            detecting = true;
-          }, 600);
+          isLivenessConfirmed = true; // ✅ Mark as safe
+
+          // Only auto-capture if enabled, otherwise just let them click
+          if (feature_autocapture.checked) {
+            setTimeout(() => {
+              handleAutoCapture(det);
+              resetChallenge(null);
+              // detecting = true;
+            }, 600);
+          } else {
+            hint.innerText = "Liveness Verified! Click Capture 📸";
+            resetChallenge(null); // Clear challenge but keep verified status conceptually? 
+            // Actually resetChallenge clears currentChallenge only. We need to keep isLivenessConfirmed true until face lost.
+          }
         } else {
           // HOLDING...
           const progress = Math.min(100, (elapsed / required) * 100);
@@ -1490,7 +1497,15 @@
     }
 
     /* ---------- Button bindings ---------- */
+    /* ---------- Button bindings ---------- */
     captureBtn.addEventListener('click', async () => {
+      if (!isLivenessConfirmed) {
+        show3DNotify('error', '⚠️ Liveness Check Required!');
+        const hint = document.getElementById("camera-hint");
+        hint.innerText = "Please BLINK or Move Head First!";
+        return;
+      }
+
       const emp = empInput.value.trim();
       // Remove Employee ID Required check
 

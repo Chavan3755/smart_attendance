@@ -1,8 +1,293 @@
 // Copyright (c) 2025, pradip and contributors
 // For license information, please see license.txt
 
-// frappe.ui.form.on("Employee Face", {
-// 	refresh(frm) {
+frappe.ui.form.on("Employee Face", {
+    refresh(frm) {
+        // Only show if not already saved or if user wants to re-enroll
+        frm.add_custom_button(__("Enroll Face (Camera)"), () => {
+            new FaceEnrollment(frm);
+        }).addClass("btn-primary");
+    },
+    custom_enrolled_employee(frm) {
+        new FaceEnrollment(frm);
+    }
+});
 
-// 	},
-// });
+class FaceEnrollment {
+    constructor(frm) {
+        this.frm = frm;
+        this.dialog = null;
+        this.stream = null;
+        this.videoEl = null;
+        this.canvasEl = null;
+        this.ctx = null;
+        this.isModelLoaded = false;
+        this.modelUrl = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js";
+
+        // Liveness vars
+        this.lastBlink = 0;
+        this.blinkCount = 0;
+        this.isProcessing = false;
+        this.scanActive = false;
+
+        this.init();
+    }
+
+    async init() {
+        await this.loadFaceApi();
+        this.makeDialog();
+    }
+
+    async loadFaceApi() {
+        if (typeof faceapi !== "undefined") return;
+
+        return new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = this.modelUrl;
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+
+    makeDialog() {
+        this.dialog = new frappe.ui.Dialog({
+            title: __("Face Enrollment - Live Check"),
+            fields: [
+                {
+                    fieldtype: "HTML",
+                    fieldname: "cam_area",
+                    options: `
+                        <div class="face-enroll-wrapper" style="text-align:center; position:relative; min-height:400px; background:#000; border-radius:8px; overflow:hidden;">
+                            <video id="enrollVideo" autoplay playsinline muted style="width:100%; height:100%; object-fit:cover; opacity:0.6;"></video>
+                            <canvas id="enrollCanvas" style="position:absolute; top:0; left:0; width:100%; height:100%;"></canvas>
+                            <div id="enrollStatus" style="position:absolute; bottom:20px; left:0; right:0; text-align:center; color:#fff; font-size:18px; font-weight:bold; text-shadow:0 2px 4px rgba(0,0,0,0.8);">Loading Models...</div>
+                            <div id="enrollGuidance" style="
+                                position:absolute; top:50%; left:50%; transform:translate(-50%, -50%);
+                                width:260px; height:340px; border:3px dashed rgba(255,255,255,0.5); border-radius:140px; pointer-events:none;
+                            "></div>
+                        </div>
+                    `
+                }
+            ],
+            primary_action_label: __("Capture Manual"),
+            primary_action: () => this.capture(true)
+        });
+
+        this.dialog.onhide = () => this.stopCamera();
+        this.dialog.show();
+
+        this.$wrapper = this.dialog.fields_dict.cam_area.$wrapper;
+        this.videoEl = this.$wrapper.find("#enrollVideo")[0];
+        this.canvasEl = this.$wrapper.find("#enrollCanvas")[0];
+        this.statusEl = this.$wrapper.find("#enrollStatus");
+
+        this.startCamera();
+    }
+
+    async startCamera() {
+        try {
+            // Load models first
+            this.statusEl.text("Loading AI Models...");
+            await Promise.all([
+                faceapi.nets.tinyFaceDetector.loadFromUri('https://raw.githubusercontent.com/vladmandic/face-api/master/model'),
+                faceapi.nets.faceLandmark68Net.loadFromUri('https://raw.githubusercontent.com/vladmandic/face-api/master/model')
+            ]);
+
+            this.isModelLoaded = true;
+            this.statusEl.text("Starting Camera...");
+
+            this.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+            this.videoEl.srcObject = this.stream;
+
+            this.videoEl.onloadedmetadata = () => {
+                this.videoEl.play();
+                this.resizeCanvas();
+                this.startDetectionLoop();
+            };
+
+        } catch (err) {
+            console.error(err);
+            this.statusEl.text("Error: " + err.message);
+            frappe.title = "Camera Error";
+        }
+    }
+
+    resizeCanvas() {
+        if (!this.videoEl || !this.canvasEl) return;
+        const dims = faceapi.matchDimensions(this.canvasEl, this.videoEl, true);
+    }
+
+    async startDetectionLoop() {
+        this.scanActive = true;
+        this.statusEl.text("Align Face & Blink Eyes");
+
+        const loop = async () => {
+            if (!this.scanActive || !this.dialog.display) return;
+
+            if (this.videoEl.paused || this.videoEl.ended) return setTimeout(loop, 100);
+
+            const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320 });
+
+            // Detect single face with landmarks
+            const result = await faceapi.detectSingleFace(this.videoEl, options).withFaceLandmarks();
+
+            const ctx = this.canvasEl.getContext("2d");
+            ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height);
+
+            if (result) {
+                const dims = faceapi.matchDimensions(this.canvasEl, this.videoEl, true);
+                const resized = faceapi.resizeResults(result, dims);
+                faceapi.draw.drawFaceLandmarks(this.canvasEl, resized);
+
+                // Liveness Check: BLINK DETECTION
+                // Calculate Eye Aspect Ratio (EAR)
+                const leftEye = result.landmarks.getLeftEye();
+                const rightEye = result.landmarks.getRightEye();
+
+                const leftEAR = this.getEAR(leftEye);
+                const rightEAR = this.getEAR(rightEye);
+
+                // Threshold for blink (approx < 0.25 to 0.3 means closed)
+                const isBlinking = (leftEAR < 0.25 && rightEAR < 0.25);
+
+                if (isBlinking) {
+                    if (Date.now() - this.lastBlink > 500) { // deglobnce
+                        this.blinkCount++;
+                        this.lastBlink = Date.now();
+                        // Flash effect
+                        this.statusEl.text(`Blink Detected! (${this.blinkCount}/2)`);
+                        this.statusEl.css("color", "#0f0");
+                        setTimeout(() => this.statusEl.css("color", "#fff"), 300);
+                    }
+                }
+
+                if (this.blinkCount >= 2) {
+                    this.scanActive = false;
+                    this.statusEl.text("Liveness Confirmed! Capturing...");
+                    setTimeout(() => this.capture(false), 500);
+                    return;
+                }
+
+            } else {
+                this.statusEl.text("No Face Detected");
+            }
+
+            requestAnimationFrame(loop);
+        };
+
+        loop();
+    }
+
+    getEAR(eye) {
+        // EAR = (|p2-p6| + |p3-p5|) / (2 * |p1-p4|)
+        // p1..p6 are points of eye
+        const p1 = eye[0];
+        const p2 = eye[1];
+        const p3 = eye[2];
+        const p4 = eye[3];
+        const p5 = eye[4];
+        const p6 = eye[5];
+
+        const dist = (p1, p2) => Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+
+        const v1 = dist(p2, p6);
+        const v2 = dist(p3, p5);
+        const h = dist(p1, p4);
+
+        return (v1 + v2) / (2.0 * h);
+    }
+
+    capture(manual = false) {
+        this.scanActive = false;
+
+        // Draw frame to hidden canvas
+        const capCanvas = document.createElement("canvas");
+        capCanvas.width = this.videoEl.videoWidth;
+        capCanvas.height = this.videoEl.videoHeight;
+        capCanvas.getContext("2d").drawImage(this.videoEl, 0, 0);
+
+        // Get Base64
+        const dataURL = capCanvas.toDataURL("image/jpeg", 0.9);
+
+        this.stopCamera();
+        this.dialog.hide();
+
+        this.uploadImage(dataURL);
+    }
+
+    uploadImage(dataURL) {
+        const file_name = `face_${frappe.utils.get_random(6)}.jpg`;
+
+        // Helper to convert dataURL to Blob
+        const block = dataURL.split(";");
+        const contentType = block[0].split(":")[1];
+        const realData = block[1].split(",")[1];
+        const blob = this.b64toBlob(realData, contentType);
+
+        let formData = new FormData();
+        formData.append("file", blob, file_name);
+        formData.append("is_private", 1);
+        formData.append("folder", "Home");
+
+        frappe.call({
+            method: "frappe.core.doctype.file.file.upload_file",
+            args: {
+                from_form: 1,
+                doctype: this.frm.doctype,
+                docname: this.frm.docname,
+                is_private: 1
+            },
+            type: "POST",
+            data: formData, // frappe.call handles this if we pass as data but we might need xhr for raw file
+            success: (r) => {
+                // Actually standard frappe file upload is via XHR usually, but let's try frappe's upload helper
+                // Wait, frappe.upload_file is cleaner if available in JS
+            }
+        });
+
+        // Better way: use frappe.upload.upload_file or just standard XHR
+        // Let's use internal `frappe.upload.make_xhr_request` if we want, or simple manual XHR
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/method/upload_file");
+        xhr.setRequestHeader("X-Frappe-CSRF-Token", frappe.csrf_token);
+
+        xhr.onreadystatechange = () => {
+            if (xhr.readyState === 4 && xhr.status === 200) {
+                const r = JSON.parse(xhr.responseText);
+                if (r.message) {
+                    this.frm.set_value("face_image", r.message.file_url);
+                    this.frm.save_or_update();
+                    frappe.msgprint(__("Face Enrolled Successfully!"));
+                }
+            }
+        };
+        xhr.send(formData);
+    }
+
+    b64toBlob(b64Data, contentType, sliceSize = 512) {
+        const byteCharacters = atob(b64Data);
+        const byteArrays = [];
+
+        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+            const slice = byteCharacters.slice(offset, offset + sliceSize);
+            const byteNumbers = new Array(slice.length);
+            for (let i = 0; i < slice.length; i++) {
+                byteNumbers[i] = slice.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            byteArrays.push(byteArray);
+        }
+
+        return new Blob(byteArrays, { type: contentType });
+    }
+
+    stopCamera() {
+        this.scanActive = false;
+        if (this.stream) {
+            this.stream.getTracks().forEach(track => track.stop());
+            this.stream = null;
+        }
+    }
+}
