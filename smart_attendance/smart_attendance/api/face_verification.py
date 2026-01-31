@@ -176,6 +176,7 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
         """, as_dict=True)
         
         if not candidates:
+             frappe.log_error("Face Verification", "No registered face data found in Employee Face table.")
              return {"ok": False, "message": "No registered face data found."}
 
         best_match_emp = None
@@ -183,6 +184,8 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
         
         # Helper: Cosine Distance
         def find_cosine_distance(source_representation, test_representation):
+            if not isinstance(source_representation, list) and not isinstance(source_representation, np.ndarray):
+                 return 1.0
             a = np.matmul(np.transpose(source_representation), test_representation)
             b = np.sum(np.multiply(source_representation, source_representation))
             c = np.sum(np.multiply(test_representation, test_representation))
@@ -197,9 +200,19 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
                 continue
                 
             try:
-                # Parse stored encoding (string -> list)
-                db_vector = json.loads(cand.encoding)
+                db_vector = []
+                # 1. Try JSON load
+                try:
+                    db_vector = json.loads(cand.encoding)
+                except:
+                    # 2. Try CSV split
+                    if isinstance(cand.encoding, str):
+                        db_vector = [float(x) for x in cand.encoding.split(',')]
                 
+                # Ensure it's a list/array of numbers
+                if not db_vector or len(db_vector) < 10: # Basic validity check
+                    continue
+
                 # Compare
                 dist = find_cosine_distance(input_vector, db_vector)
                 
@@ -212,6 +225,7 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
                     break
                     
             except Exception as e:
+                # frappe.log_error("Face Match Error", str(e))
                 continue
 
         # D. Validate Match
