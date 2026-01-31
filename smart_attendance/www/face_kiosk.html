@@ -237,6 +237,24 @@
     }
   }
 
+  #capture-btn {
+    display: none !important;
+    /* Fully hidden, auto-capture only */
+    background: #f97316;
+    border: none;
+    color: white;
+    padding: 14px 24px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 6px -1px rgba(249, 115, 22, 0.4);
+    transition: all 0.2s;
+  }
+
   .badge {
     position: absolute;
     top: 12px;
@@ -976,10 +994,16 @@
     const noseHistory = [];
     function checkStability(landmarks) {
       const nose = landmarks[30];
+      // Need face width for normalization
+      const left = landmarks[0].x;
+      const right = landmarks[16].x;
+      const faceWidth = Math.abs(right - left) || 100; // avoid div/0
+
       noseHistory.push(nose);
       if (noseHistory.length > 5) noseHistory.shift();
       if (noseHistory.length < 5) return true;
 
+      // Calculate max movement relative to face size
       let maxDist = 0;
       for (let i = 1; i < noseHistory.length; i++) {
         const dx = noseHistory[i].x - noseHistory[i - 1].x;
@@ -987,9 +1011,11 @@
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist > maxDist) maxDist = dist;
       }
-      // Relaxed Stability Threshold: 24px (was 12)
-      // This stops "wild waving" but allows natural breathing/micro-movements
-      return maxDist < 24;
+
+      // Allow movement up to 15% of face width
+      // On a 300px wide face, this is 45px. Much more forgiving for mobile shake.
+      const threshold = faceWidth * 0.15;
+      return maxDist < threshold;
     }
 
     // States: 
@@ -1010,8 +1036,8 @@
       const rawEar = getEAR(det.landmarks.positions);
       const ear = getSmoothedEAR(rawEar);
 
-      // Timeout Reset (if stuck in a state too long)
-      if (blinkState > 0 && now - blinkStateTime > 3000) {
+      // Timeout / Reset logic
+      if (blinkState > 0 && now - blinkStateTime > 4000) { // Gave 1 extra sec
         blinkState = 0;
         blinkStateTime = 0;
         hint.innerText = "Timeout. Try Again.";
@@ -1020,16 +1046,14 @@
 
       // 1. POSE CHECK (Relaxed)
       const yaw = getYaw(det.landmarks.positions);
-      if (Math.abs(yaw) > 0.3) { // Allowed 0.3 (approx 20 deg)
+      if (Math.abs(yaw) > 0.35) { // Even more relaxed (approx 25 deg)
         hint.innerText = "Look Straight 😐";
         return;
       }
 
       // 2. STABILITY CHECK
-      // Only enforce strict stability when WAITING for blink. 
-      // During blink (State 1), eyes move, so we relax check or skip it?
-      // Actually nose shouldn't move much during blink.
       if (!checkStability(det.landmarks.positions)) {
+        // Don't error immediately, just wait
         hint.innerText = "Hold Camera Steady ✋";
         return;
       }
@@ -1043,7 +1067,6 @@
           hint.innerText = "Open Eyes 👁️";
         }
 
-        // Detect Blink Down
         if (ear < THRESH_CLOSED) {
           blinkState = 1;
           blinkStateTime = now;
@@ -1051,7 +1074,6 @@
         }
 
       } else if (blinkState === 1) {
-        // Waiting for Open (Finish)
         hint.innerText = "Opening...";
 
         if (ear > THRESH_OPEN) {
@@ -1069,7 +1091,7 @@
           if (feature_autocapture.checked) {
             setTimeout(() => {
               handleAutoCapture(det);
-            }, 400);
+            }, 200); // Faster trigger (was 400)
           }
         }
       }

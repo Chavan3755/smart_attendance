@@ -141,6 +141,10 @@ class FaceEnrollment {
 
         const checkStability = (landmarks) => {
             const nose = landmarks[30];
+            const left = landmarks[0].x;
+            const right = landmarks[16].x;
+            const faceWidth = Math.abs(right - left) || 100;
+
             noseHistory.push(nose);
             if (noseHistory.length > 5) noseHistory.shift();
             if (noseHistory.length < 5) return true;
@@ -152,7 +156,8 @@ class FaceEnrollment {
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 if (dist > maxDist) maxDist = dist;
             }
-            return maxDist < STABILITY_THRESH;
+            // Allow 15% movement relative to face
+            return maxDist < (faceWidth * 0.15);
         };
 
         const loop = async () => {
