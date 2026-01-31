@@ -923,7 +923,7 @@
     // ---------- AI helpers ----------
     let stableSince = null;
     let detecting = true;
-    let isLivenessConfirmed = false; // 🔒 Security Flag
+    // let isLivenessConfirmed = false; // 🔒 Security Flag Removed
 
     const detectOptions = new faceapi.TinyFaceDetectorOptions({
       inputSize: 256,
@@ -948,7 +948,6 @@
         if (!dets || dets.length === 0) {
           hint.style.display = "block";
           stableSince = null;
-          isLivenessConfirmed = false; // Reset security
           requestAnimationFrame(detectionLoop);
           return;
         }
@@ -964,10 +963,13 @@
 
         // ✅ Single face
         hint.style.display = "block";
+        hint.innerText = "Face Detected";
 
-        // 🧠 ALWAYS Run Liveness Challenge (Security)
-        // This ensures photos cannot trigger standard flow
-        runLivenessChallenge(dets[0]);
+        // 🧠 Direct Auto Capture (No Liveness)
+        if (feature_autocapture.checked) {
+          handleAutoCapture(dets[0]);
+        }
+
 
       } catch (e) {
         console.warn('detect error', e);
@@ -978,239 +980,9 @@
 
 
     /* -----------------------------------------------------------
-     *  🛡️ ROBUST DOUBLE-BLINK LIVENESS (Anti-Spoofing)
+     *  Liveness Logic Removed
      * ----------------------------------------------------------- */
-    // Rolling Average to filter noise (static photo jitter)
-    const earHistory = [];
-    const HISTORY_SIZE = 7; // Increased smoothing
 
-    function getSmoothedEAR(ear) {
-      earHistory.push(ear);
-      if (earHistory.length > HISTORY_SIZE) earHistory.shift();
-      const sum = earHistory.reduce((a, b) => a + b, 0);
-      return sum / earHistory.length;
-    }
-
-    const noseHistory = [];
-    function checkStability(landmarks) {
-      const nose = landmarks[30];
-      // Need face width for normalization
-      const left = landmarks[0].x;
-      const right = landmarks[16].x;
-      const faceWidth = Math.abs(right - left) || 100; // avoid div/0
-
-      noseHistory.push(nose);
-      if (noseHistory.length > 5) noseHistory.shift();
-      if (noseHistory.length < 5) return true;
-
-      // Calculate max movement relative to face size
-      let maxDist = 0;
-      for (let i = 1; i < noseHistory.length; i++) {
-        const dx = noseHistory[i].x - noseHistory[i - 1].x;
-        const dy = noseHistory[i].y - noseHistory[i - 1].y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > maxDist) maxDist = dist;
-      }
-
-      // Allow movement up to 15% of face width
-      // On a 300px wide face, this is 45px. Much more forgiving for mobile shake.
-      const threshold = faceWidth * 0.15;
-      return maxDist < threshold;
-    }
-
-    // States: 
-    // 0 = Waiting for Blink (Open)
-    // 1 = Blink Down (Closed)
-    // 2 = Blink Up (Verified)
-    let blinkState = 0;
-    let blinkStateTime = 0;
-
-    // Adjusted Thresholds for Real World Usability
-    const THRESH_OPEN = 0.28;   // Was 0.35 (too strict for some)
-    const THRESH_CLOSED = 0.22; // Was 0.18 (too hard to squeeze)
-
-    function runLivenessChallenge(det) {
-      const now = Date.now();
-      const hint = document.getElementById("camera-hint");
-
-      const rawEar = getEAR(det.landmarks.positions);
-      const ear = getSmoothedEAR(rawEar);
-
-      // Timeout / Reset logic
-      if (blinkState > 0 && now - blinkStateTime > 4000) { // Gave 1 extra sec
-        blinkState = 0;
-        blinkStateTime = 0;
-        hint.innerText = "Timeout. Try Again.";
-        return;
-      }
-
-      // 1. POSE CHECK (Relaxed)
-      const yaw = getYaw(det.landmarks.positions);
-      if (Math.abs(yaw) > 0.35) { // Even more relaxed (approx 25 deg)
-        hint.innerText = "Look Straight 😐";
-        return;
-      }
-
-      // 2. STABILITY CHECK
-      if (!checkStability(det.landmarks.positions)) {
-        // Don't error immediately, just wait
-        hint.innerText = "Hold Camera Steady ✋";
-        return;
-      }
-
-      // STATE MACHINE: SINGLE BLINK
-      if (blinkState === 0) {
-        hint.innerText = "Please BLINK Naturally 😉";
-        hint.style.color = "#fff";
-
-        if (ear < THRESH_CLOSED) {
-          hint.innerText = "Open Eyes 👁️";
-        }
-
-        if (ear < THRESH_CLOSED) {
-          blinkState = 1;
-          blinkStateTime = now;
-          hint.innerText = "Blinking...";
-        }
-
-      } else if (blinkState === 1) {
-        hint.innerText = "Opening...";
-
-        if (ear > THRESH_OPEN) {
-          // SUCCESS!
-          blinkState = 2; // Verified
-
-          hint.innerText = "Verified! Capturing... 📸";
-          hint.style.color = "#4ade80";
-          show3DNotify('in', `😉 Liveness Confirmed`);
-
-          playSuccessTone('soft');
-          isLivenessConfirmed = true;
-          blinkState = 0;
-
-          if (feature_autocapture.checked) {
-            setTimeout(() => {
-              handleAutoCapture(det);
-            }, 200); // Faster trigger (was 400)
-          }
-        }
-      }
-    }
-
-    function resetChallenge(failMsg) {
-      blinkStateTime = 0;
-      if (failMsg) {
-        const hint = document.getElementById("camera-hint");
-        hint.innerText = failMsg;
-      }
-    }
-
-    /* ---------- Geometry Helpers ---------- */
-    // Calculate Yaw (Head Turn) ratio
-    // Returns range approx -0.5 (Left) to +0.5 (Right), 0 is center
-    function getYaw(landmarks) {
-      // Nose tip: 30
-      // Left Face Edge: 0
-      // Right Face Edge: 16
-      const nose = landmarks[30].x;
-      const leftEdge = landmarks[0].x;
-      const rightEdge = landmarks[16].x;
-
-      const faceWidth = rightEdge - leftEdge;
-      if (faceWidth === 0) return 0;
-
-      // Normalized nose position (0.0 to 1.0)
-      const relNose = (nose - leftEdge) / faceWidth;
-
-      // Center is 0.5. 
-      // < 0.5 is Looking Left (Nose closer to left edge)
-      // > 0.5 is Looking Right (Nose closer to right edge)
-
-      // Let's shift so 0 is center:
-      return (relNose - 0.5);
-    }
-
-    // Calculate Pitch (Head Nod)
-    function getPitch(landmarks) {
-      // Simple 2D approximation:
-      // Compare Nose Tip (30) vertical position relative to Eyes and Chin
-      // Top: Eye Center (midpoint of 36-39 and 42-45)
-      // Bottom: Chin (8)
-
-      const noseY = landmarks[30].y;
-      const chinY = landmarks[8].y;
-      const leftEyeY = landmarks[36].y; // outer corner
-      const rightEyeY = landmarks[45].y; // outer corner
-      const eyesY = (leftEyeY + rightEyeY) / 2;
-
-      const faceHeight = chinY - eyesY;
-      if (faceHeight === 0) return 0;
-
-      // Ratio of Nose Position
-      const noseRatio = (noseY - eyesY) / faceHeight;
-
-      // Calibrated Center (Looking Straight): ~0.35 - 0.45
-      // < 0.35 means Looking UP (Pitch Up)
-      // > 0.45 means Looking DOWN (Pitch Down)
-
-      // Normalize roughly to 0 center (0.4 base)
-      return (noseRatio - 0.4);
-    }
-
-    function getEAR(landmarks) {
-      // Left Eye: 36-41
-      // Right Eye: 42-47
-      const leftRef = [36, 37, 38, 39, 40, 41];
-      const rightRef = [42, 43, 44, 45, 46, 47];
-
-      const getEyeRatio = (indices) => {
-        const p = indices.map(i => landmarks[i]);
-        const v1 = Math.hypot(p[1].x - p[5].x, p[1].y - p[5].y);
-        const v2 = Math.hypot(p[2].x - p[4].x, p[2].y - p[4].y);
-        const h = Math.hypot(p[0].x - p[3].x, p[0].y - p[3].y);
-        return (v1 + v2) / (2.0 * h);
-      };
-
-      const leftEAR = getEyeRatio(leftRef);
-      const rightEAR = getEyeRatio(rightRef);
-      return (leftEAR + rightEAR) / 2.0;
-    }
-
-    function getMAR(landmarks) {
-      // Mouth: 48-67
-      // Inner Lip: 60-67 (Better for openness)
-      // 60-64 (Horiz), 61-67, 62-66, 63-65 (Vert)
-
-      // Let's use outer lip for easier detection at distance:
-      // 48 (Left Corner), 54 (Right Corner) -> Width
-      // 51 (Top center), 57 (Bottom center) -> Height
-
-      const p = landmarks;
-      // Verticals: (50-58), (51-57), (52-56)
-      const v1 = Math.hypot(p[50].x - p[58].x, p[50].y - p[58].y);
-      const v2 = Math.hypot(p[51].x - p[57].x, p[51].y - p[57].y);
-      const v3 = Math.hypot(p[52].x - p[56].x, p[52].y - p[56].y);
-
-      // Horizontal: 48-54
-      const h = Math.hypot(p[48].x - p[54].x, p[48].y - p[54].y);
-
-      if (h === 0) return 0;
-      return (v1 + v2 + v3) / (3.0 * h);
-    }
-
-    function getRoll(landmarks) {
-      // Angle between eyes
-      // Left Eye: 36 (outer corner)
-      // Right Eye: 45 (outer corner)
-      const left = landmarks[36];
-      const right = landmarks[45];
-
-      const dy = right.y - left.y;
-      const dx = right.x - left.x;
-
-      // Atan2 returns radians.
-      return Math.atan2(dy, dx);
-    }
 
 
 
@@ -1507,17 +1279,8 @@
     /* ---------- Button bindings ---------- */
     /* ---------- Button bindings ---------- */
     captureBtn.addEventListener('click', async () => {
-      if (!isLivenessConfirmed) {
-        show3DNotify('error', '⚠️ Liveness Check Required!');
-        const hint = document.getElementById("camera-hint");
-        hint.innerText = "Please BLINK or Move Head First!";
-        return;
-      }
-
       const emp = empInput.value.trim();
-      // Remove Employee ID Required check
 
-      await prepareCaptureCanvas();
       ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
       const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
       imgPreview.src = dataUrl;
