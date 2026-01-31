@@ -120,20 +120,52 @@ class FaceEnrollment {
 
     async startDetectionLoop() {
         this.scanActive = true;
-        this.statusEl.text("Align Face & Blink Eyes");
+        // STATE MACHINE & HELPERS for Liveness
+        let blinkState = 0;
+        let blinkStateTime = 0;
+        const noseHistory = [];
+        const earHistory = [];
+        const HISTORY_SIZE = 7;
+
+        // Tuned Thresholds (Matching Kiosk)
+        const THRESH_OPEN = 0.28;
+        const THRESH_CLOSED = 0.22;
+        const STABILITY_THRESH = 24;
+
+        const getSmoothedEAR = (ear) => {
+            earHistory.push(ear);
+            if (earHistory.length > HISTORY_SIZE) earHistory.shift();
+            const sum = earHistory.reduce((a, b) => a + b, 0);
+            return sum / earHistory.length;
+        };
+
+        const checkStability = (landmarks) => {
+            const nose = landmarks[30];
+            noseHistory.push(nose);
+            if (noseHistory.length > 5) noseHistory.shift();
+            if (noseHistory.length < 5) return true;
+
+            let maxDist = 0;
+            for (let i = 1; i < noseHistory.length; i++) {
+                const dx = noseHistory[i].x - noseHistory[i - 1].x;
+                const dy = noseHistory[i].y - noseHistory[i - 1].y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > maxDist) maxDist = dist;
+            }
+            return maxDist < STABILITY_THRESH;
+        };
 
         const loop = async () => {
             if (!this.scanActive || !this.dialog.display) return;
 
             if (this.videoEl.paused || this.videoEl.ended) return setTimeout(loop, 100);
 
-            const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320 });
+            const detections = await faceapi.detectAllFaces(this.videoEl, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
+            const result = detections[0];
 
-            // Detect single face with landmarks
-            const result = await faceapi.detectSingleFace(this.videoEl, options).withFaceLandmarks();
-
-            const ctx = this.canvasEl.getContext("2d");
-            ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height);
+            // Clear Canvas
+            this.ctx = this.canvasEl.getContext("2d");
+            this.ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height);
 
             if (result) {
                 const dims = faceapi.matchDimensions(this.canvasEl, this.videoEl, true);
@@ -149,53 +181,65 @@ class FaceEnrollment {
                 const drawBox = new faceapi.draw.DrawBox(box, drawOptions);
                 drawBox.draw(this.canvasEl);
 
-                // faceapi.draw.drawFaceLandmarks(this.canvasEl, resized); (Too messy, lets just use box + eyes)
+                // --- LIVENESS LOGIC START ---
+                const rawEar = (this.getEAR(result.landmarks.getLeftEye()) + this.getEAR(result.landmarks.getRightEye())) / 2; // Average both eyes
+                const ear = getSmoothedEAR(rawEar);
+                const now = Date.now();
 
-                // Liveness Check: BLINK DETECTION
-                const leftEye = result.landmarks.getLeftEye();
-                const rightEye = result.landmarks.getRightEye();
+                // Timeout Reset
+                if (blinkState > 0 && now - blinkStateTime > 3000) {
+                    blinkState = 0;
+                    blinkStateTime = 0;
+                    this.statusEl.text("Timeout. Try Again.");
+                }
 
-                const leftEAR = this.getEAR(leftEye);
-                const rightEAR = this.getEAR(rightEye);
-
-                // Threshold: Open is usually > 0.3. Closed is < 0.25 (depends on cam)
-                const isBlinking = (leftEAR < 0.28 && rightEAR < 0.28);
-
-                if (isBlinking) {
-                    if (Date.now() - this.lastBlink > 400) {
-                        this.blinkCount++;
-                        this.lastBlink = Date.now();
-
-                        // Visual Flash
-                        this.statusEl.html(`<span style="color:#0f0; font-size:24px;">👁️ Blink Detected! (${this.blinkCount}/2)</span>`);
-                    }
+                // Stability Check (Global)
+                if (!checkStability(result.landmarks.positions)) {
+                    this.statusEl.text("Hold Camera Steady ✋");
+                    blinkState = 0; // Reset just in case
                 } else {
-                    // Status if not blinking
-                    if (this.blinkCount === 0) {
-                        this.statusEl.text("Please Blink Eyes Naturally");
+                    // Stable - Process Blink State
+                    if (blinkState === 0) {
+                        this.statusEl.html('<span style="color:#fff">Please BLINK Naturally 😉</span>');
+
+                        // Wait for blink down
+                        if (ear < THRESH_CLOSED) {
+                            blinkState = 1;
+                            blinkStateTime = now;
+                            this.statusEl.text("Blinking...");
+                        }
+
+                    } else if (blinkState === 1) {
+                        this.statusEl.text("Opening...");
+                        // Wait for open
+                        if (ear > THRESH_OPEN) {
+                            // SUCCESS
+                            blinkState = 2;
+                            this.scanActive = false;
+
+                            this.statusEl.html(`<span style="color:#0f0; font-size:24px;">✅ Liveness Confirmed! Auto-Capturing...</span>`);
+
+                            // Green Overlay
+                            this.ctx.fillStyle = "rgba(0, 255, 0, 0.2)";
+                            this.ctx.fillRect(0, 0, this.canvasEl.width, this.canvasEl.height);
+
+                            setTimeout(() => this.capture(false), 500);
+                            return;
+                        }
                     }
                 }
-
-                if (this.blinkCount >= 2) {
-                    this.scanActive = false;
-                    this.statusEl.html(`<span style="color:#0f0; font-size:24px;">✅ Liveness Confirmed! Auto-Capturing...</span>`);
-
-                    // Green Overlay
-                    this.ctx = this.canvasEl.getContext("2d");
-                    this.ctx.fillStyle = "rgba(0, 255, 0, 0.2)";
-                    this.ctx.fillRect(0, 0, this.canvasEl.width, this.canvasEl.height);
-
-                    setTimeout(() => this.capture(false), 800);
-                    return;
-                }
+                // --- LIVENESS LOGIC END ---
 
             } else {
                 this.statusEl.text("Looking for face...");
+                // Reset history if face lost
+                blinkState = 0;
+                noseHistory.length = 0; // Clear nose history
+                earHistory.length = 0; // Clear ear history
             }
 
             requestAnimationFrame(loop);
         };
-
         loop();
     }
 
