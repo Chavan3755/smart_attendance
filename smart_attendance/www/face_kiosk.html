@@ -964,7 +964,7 @@
      * ----------------------------------------------------------- */
     // Rolling Average to filter noise (static photo jitter)
     const earHistory = [];
-    const HISTORY_SIZE = 5;
+    const HISTORY_SIZE = 7; // Increased smoothing
 
     function getSmoothedEAR(ear) {
       earHistory.push(ear);
@@ -999,9 +999,9 @@
     let blinkState = 0;
     let blinkStateTime = 0;
 
-    // Tighter Thresholds
-    const THRESH_OPEN = 0.35;   // Must be wide open
-    const THRESH_CLOSED = 0.18; // Must be fully closed
+    // Adjusted Thresholds for Real World Usability
+    const THRESH_OPEN = 0.28;   // Was 0.35 (too strict for some)
+    const THRESH_CLOSED = 0.22; // Was 0.18 (too hard to squeeze)
 
     function runLivenessChallenge(det) {
       const now = Date.now();
