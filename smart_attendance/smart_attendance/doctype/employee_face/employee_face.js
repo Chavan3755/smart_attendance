@@ -87,7 +87,6 @@ class FaceEnrollment {
 
     async startCamera() {
         try {
-            // Load models first
             this.statusEl.text("Loading AI Models...");
             await Promise.all([
                 faceapi.nets.tinyFaceDetector.loadFromUri('https://raw.githubusercontent.com/vladmandic/face-api/master/model'),
@@ -96,6 +95,20 @@ class FaceEnrollment {
 
             this.isModelLoaded = true;
             this.statusEl.text("Starting Camera...");
+
+            // SHIM for getUserMedia in insecure contexts (HTTP)
+            if (!navigator.mediaDevices) {
+                navigator.mediaDevices = {};
+            }
+            if (!navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia = function (constraints) {
+                    const getUserMedia = navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.getUserMedia;
+                    if (!getUserMedia) {
+                        return Promise.reject(new Error('Browser does not support camera (or block insecure context). Use HTTPS.'));
+                    }
+                    return new Promise((resolve, reject) => getUserMedia.call(navigator, constraints, resolve, reject));
+                };
+            }
 
             this.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
             this.videoEl.srcObject = this.stream;
@@ -108,8 +121,8 @@ class FaceEnrollment {
 
         } catch (err) {
             console.error(err);
-            this.statusEl.text("Error: " + err.message);
-            frappe.title = "Camera Error";
+            this.statusEl.html(`<span style="color:red">Camera Error: ${err.message}<br>Try using HTTPS or Localhost.</span>`);
+            frappe.msgprint("Camera Access Error. Please use HTTPS.");
         }
     }
 
@@ -120,127 +133,41 @@ class FaceEnrollment {
 
     async startDetectionLoop() {
         this.scanActive = true;
-        // STATE MACHINE & HELPERS for Liveness
-        let blinkState = 0;
-        let blinkStateTime = 0;
-        const noseHistory = [];
-        const earHistory = [];
-        const HISTORY_SIZE = 7;
-
-        // Tuned Thresholds (Matching Kiosk)
-        const THRESH_OPEN = 0.28;
-        const THRESH_CLOSED = 0.22;
-        const STABILITY_THRESH = 24;
-
-        const getSmoothedEAR = (ear) => {
-            earHistory.push(ear);
-            if (earHistory.length > HISTORY_SIZE) earHistory.shift();
-            const sum = earHistory.reduce((a, b) => a + b, 0);
-            return sum / earHistory.length;
-        };
-
-        const checkStability = (landmarks) => {
-            const nose = landmarks[30];
-            const left = landmarks[0].x;
-            const right = landmarks[16].x;
-            const faceWidth = Math.abs(right - left) || 100;
-
-            noseHistory.push(nose);
-            if (noseHistory.length > 5) noseHistory.shift();
-            if (noseHistory.length < 5) return true;
-
-            let maxDist = 0;
-            for (let i = 1; i < noseHistory.length; i++) {
-                const dx = noseHistory[i].x - noseHistory[i - 1].x;
-                const dy = noseHistory[i].y - noseHistory[i - 1].y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist > maxDist) maxDist = dist;
-            }
-            // Allow 15% movement relative to face
-            return maxDist < (faceWidth * 0.15);
-        };
+        let detectionCount = 0;
 
         const loop = async () => {
             if (!this.scanActive || !this.dialog.display) return;
-
             if (this.videoEl.paused || this.videoEl.ended) return setTimeout(loop, 100);
 
-            const detections = await faceapi.detectAllFaces(this.videoEl, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
-            const result = detections[0];
+            const detections = await faceapi.detectAllFaces(this.videoEl, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.5 })).withFaceLandmarks();
 
             // Clear Canvas
             this.ctx = this.canvasEl.getContext("2d");
             this.ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height);
 
-            if (result) {
+            if (detections && detections.length > 0) {
+                const result = detections[0];
                 const dims = faceapi.matchDimensions(this.canvasEl, this.videoEl, true);
                 const resized = faceapi.resizeResults(result, dims);
 
                 // Draw Box
                 const box = resized.detection.box;
-                const drawOptions = {
-                    label: "Face Detected",
-                    lineWidth: 2,
-                    boxColor: "rgba(0, 255, 0, 0.8)"
-                };
-                const drawBox = new faceapi.draw.DrawBox(box, drawOptions);
-                drawBox.draw(this.canvasEl);
+                new faceapi.draw.DrawBox(box, { label: "Face Detected", boxColor: "#0f0" }).draw(this.canvasEl);
 
-                // --- LIVENESS LOGIC START ---
-                const rawEar = (this.getEAR(result.landmarks.getLeftEye()) + this.getEAR(result.landmarks.getRightEye())) / 2; // Average both eyes
-                const ear = getSmoothedEAR(rawEar);
-                const now = Date.now();
-
-                // Timeout Reset
-                if (blinkState > 0 && now - blinkStateTime > 3000) {
-                    blinkState = 0;
-                    blinkStateTime = 0;
-                    this.statusEl.text("Timeout. Try Again.");
-                }
-
-                // Stability Check (Global)
-                if (!checkStability(result.landmarks.positions)) {
-                    this.statusEl.text("Hold Camera Steady ✋");
-                    blinkState = 0; // Reset just in case
+                // Auto-Capture logic (Simple)
+                detectionCount++;
+                if (detectionCount > 5) { // Wait for ~5 stable frames
+                    this.statusEl.html(`<span style="color:#0f0; font-size:24px;">✅ Face Detected! Capturing...</span>`);
+                    this.scanActive = false;
+                    setTimeout(() => this.capture(false), 500);
+                    return;
                 } else {
-                    // Stable - Process Blink State
-                    if (blinkState === 0) {
-                        this.statusEl.html('<span style="color:#fff">Please BLINK Naturally 😉</span>');
-
-                        // Wait for blink down
-                        if (ear < THRESH_CLOSED) {
-                            blinkState = 1;
-                            blinkStateTime = now;
-                            this.statusEl.text("Blinking...");
-                        }
-
-                    } else if (blinkState === 1) {
-                        this.statusEl.text("Opening...");
-                        // Wait for open
-                        if (ear > THRESH_OPEN) {
-                            // SUCCESS
-                            blinkState = 2;
-                            this.scanActive = false;
-
-                            this.statusEl.html(`<span style="color:#0f0; font-size:24px;">✅ Liveness Confirmed! Auto-Capturing...</span>`);
-
-                            // Green Overlay
-                            this.ctx.fillStyle = "rgba(0, 255, 0, 0.2)";
-                            this.ctx.fillRect(0, 0, this.canvasEl.width, this.canvasEl.height);
-
-                            setTimeout(() => this.capture(false), 500);
-                            return;
-                        }
-                    }
+                    this.statusEl.text(`Hold Steady... ${Math.floor((detectionCount / 5) * 100)}%`);
                 }
-                // --- LIVENESS LOGIC END ---
 
             } else {
+                detectionCount = 0;
                 this.statusEl.text("Looking for face...");
-                // Reset history if face lost
-                blinkState = 0;
-                noseHistory.length = 0; // Clear nose history
-                earHistory.length = 0; // Clear ear history
             }
 
             requestAnimationFrame(loop);
