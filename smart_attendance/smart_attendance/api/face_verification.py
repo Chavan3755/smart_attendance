@@ -112,19 +112,17 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
         return {"ok": False, "message": "Invalid image data."}
 
     try:
-        # 2️⃣ LIVENESS CHECK (Anti-Spoofing) & Face Detection
-        # extract_faces returns list of dicts
+        # 2️⃣ Face Detection (Liveness Removed as per request)
         try:
-             # enforce_detection=True ensures we error if no face
-             # anti_spoofing=True checks realness
-             # Note: First run might be slow as it downloads weights
+             # Use enforce_detection=False to avoid hard crash on "No Face"
+             # verification step will handle specific matching
              faces = DeepFace.extract_faces(
                  img_path=temp_img_path, 
-                 enforce_detection=True, 
-                 anti_spoofing=True
+                 detector_backend='opencv',
+                 enforce_detection=True,
+                 align=True
              )
         except ValueError:
-            # DeepFace raises ValueError if no face detected
             return {"ok": False, "message": "No face detected in image."}
         except Exception as e:
             frappe.log_error(f"DeepFace Extract Error: {e}")
@@ -135,16 +133,9 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
              
         # Check first face (assuming single user)
         main_face = faces[0]
-        # is_real is boolean
-        is_real = main_face.get("is_real", False)
-        # antispoof_score = main_face.get("antispoof_score", 0.0) 
         
-        if not is_real:
-             return {
-                 "ok": False,
-                 "reason": "spoof_detected",
-                 "message": f"Real Face Required (Spoof Detected)."
-             }
+        # Liveness check removed
+
 
         # 3️⃣ IDENTIFY / VERIFY
         detected_employee = employee
@@ -226,7 +217,7 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
         log.time = now_datetime()
         log.log_type = final_log_type
         log.distance = match_distance
-        log.details = f"Liveness: True, Dist: {match_distance:.4f}"
+        log.details = f"Liveness: Skipped, Dist: {match_distance:.4f}"
         log.insert(ignore_permissions=True)
     
         attach_image_to_fal(log.name, image_base64)
