@@ -121,9 +121,68 @@ class FaceEnrollment {
 
         } catch (err) {
             console.error(err);
-            this.statusEl.html(`<span style="color:red">Camera Error: ${err.message}<br>Try using HTTPS or Localhost.</span>`);
-            frappe.msgprint("Camera Access Error. Please use HTTPS.");
+            this.statusEl.html(`<span style="color:red">Camera blocked (Insecure Context).<br>Please upload a photo instead.</span>`);
+            this.showUploadUI();
         }
+    }
+
+    showUploadUI() {
+        this.$wrapper.find("#enrollVideo").hide();
+        this.$wrapper.find("#enrollCanvas").show(); // We will draw image here
+
+        // Add Upload Button if not exists
+        if (this.$wrapper.find("#btnUploadFace").length === 0) {
+            $(`<button class="btn btn-default btn-sm" id="btnUploadFace" style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); z-index:10;">
+                📁 Upload Photo
+            </button>`).appendTo(this.$wrapper.find(".face-enroll-wrapper"))
+                .click(() => this.$wrapper.find("#enrollFile").click());
+
+            // Add File Input
+            $(`<input type="file" id="enrollFile" accept="image/*" style="display:none;">`)
+                .appendTo(this.$wrapper)
+                .change((e) => this.handleFileSelect(e));
+        }
+    }
+
+    handleFileSelect(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            const img = new Image();
+            img.onload = async () => {
+                // Draw to canvas
+                this.canvasEl.width = this.videoEl.clientWidth || 640;
+                this.canvasEl.height = this.videoEl.clientHeight || 480;
+                this.ctx = this.canvasEl.getContext("2d");
+
+                // Scale to fit
+                const scale = Math.min(this.canvasEl.width / img.width, this.canvasEl.height / img.height);
+                const w = img.width * scale;
+                const h = img.height * scale;
+                const x = (this.canvasEl.width - w) / 2;
+                const y = (this.canvasEl.height - h) / 2;
+
+                this.ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height);
+                this.ctx.drawImage(img, x, y, w, h);
+
+                // Run Detection
+                this.statusEl.text("Analyzing Image...");
+                const detections = await faceapi.detectAllFaces(this.canvasEl, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
+
+                if (detections && detections.length > 0) {
+                    const result = detections[0];
+                    new faceapi.draw.DrawBox(result.detection.box, { label: "Face Detected", boxColor: "#0f0" }).draw(this.canvasEl);
+                    this.statusEl.html(`<span style="color:#0f0">✅ Valid Face! Click 'Capture Manual' to Save.</span>`);
+                    // We can also auto-save? Let's leave it to manual for confirmation
+                } else {
+                    this.statusEl.html(`<span style="color:red">❌ No Face Detected. Try another.</span>`);
+                }
+            };
+            img.src = evt.target.result;
+        };
+        reader.readAsDataURL(file);
     }
 
     resizeCanvas() {
