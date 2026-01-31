@@ -138,39 +138,59 @@ class FaceEnrollment {
             if (result) {
                 const dims = faceapi.matchDimensions(this.canvasEl, this.videoEl, true);
                 const resized = faceapi.resizeResults(result, dims);
-                faceapi.draw.drawFaceLandmarks(this.canvasEl, resized);
+
+                // Draw Box
+                const box = resized.detection.box;
+                const drawOptions = {
+                    label: "Face Detected",
+                    lineWidth: 2,
+                    boxColor: "rgba(0, 255, 0, 0.8)"
+                };
+                const drawBox = new faceapi.draw.DrawBox(box, drawOptions);
+                drawBox.draw(this.canvasEl);
+
+                // faceapi.draw.drawFaceLandmarks(this.canvasEl, resized); (Too messy, lets just use box + eyes)
 
                 // Liveness Check: BLINK DETECTION
-                // Calculate Eye Aspect Ratio (EAR)
                 const leftEye = result.landmarks.getLeftEye();
                 const rightEye = result.landmarks.getRightEye();
 
                 const leftEAR = this.getEAR(leftEye);
                 const rightEAR = this.getEAR(rightEye);
 
-                // Threshold for blink (approx < 0.25 to 0.3 means closed)
-                const isBlinking = (leftEAR < 0.25 && rightEAR < 0.25);
+                // Threshold: Open is usually > 0.3. Closed is < 0.25 (depends on cam)
+                const isBlinking = (leftEAR < 0.28 && rightEAR < 0.28);
 
                 if (isBlinking) {
-                    if (Date.now() - this.lastBlink > 500) { // deglobnce
+                    if (Date.now() - this.lastBlink > 400) {
                         this.blinkCount++;
                         this.lastBlink = Date.now();
-                        // Flash effect
-                        this.statusEl.text(`Blink Detected! (${this.blinkCount}/2)`);
-                        this.statusEl.css("color", "#0f0");
-                        setTimeout(() => this.statusEl.css("color", "#fff"), 300);
+
+                        // Visual Flash
+                        this.statusEl.html(`<span style="color:#0f0; font-size:24px;">👁️ Blink Detected! (${this.blinkCount}/2)</span>`);
+                    }
+                } else {
+                    // Status if not blinking
+                    if (this.blinkCount === 0) {
+                        this.statusEl.text("Please Blink Eyes Naturally");
                     }
                 }
 
                 if (this.blinkCount >= 2) {
                     this.scanActive = false;
-                    this.statusEl.text("Liveness Confirmed! Capturing...");
-                    setTimeout(() => this.capture(false), 500);
+                    this.statusEl.html(`<span style="color:#0f0; font-size:24px;">✅ Liveness Confirmed! Auto-Capturing...</span>`);
+
+                    // Green Overlay
+                    this.ctx = this.canvasEl.getContext("2d");
+                    this.ctx.fillStyle = "rgba(0, 255, 0, 0.2)";
+                    this.ctx.fillRect(0, 0, this.canvasEl.width, this.canvasEl.height);
+
+                    setTimeout(() => this.capture(false), 800);
                     return;
                 }
 
             } else {
-                this.statusEl.text("No Face Detected");
+                this.statusEl.text("Looking for face...");
             }
 
             requestAnimationFrame(loop);
@@ -229,37 +249,45 @@ class FaceEnrollment {
         formData.append("file", blob, file_name);
         formData.append("is_private", 1);
         formData.append("folder", "Home");
+        formData.append("doctype", this.frm.doctype);
+        formData.append("docname", this.frm.docname);
 
-        frappe.call({
-            method: "frappe.core.doctype.file.file.upload_file",
-            args: {
-                from_form: 1,
-                doctype: this.frm.doctype,
-                docname: this.frm.docname,
-                is_private: 1
-            },
-            type: "POST",
-            data: formData, // frappe.call handles this if we pass as data but we might need xhr for raw file
-            success: (r) => {
-                // Actually standard frappe file upload is via XHR usually, but let's try frappe's upload helper
-                // Wait, frappe.upload_file is cleaner if available in JS
-            }
-        });
+        frappe.show_progress("Uploading Face", 10, 100, "Please wait...");
 
-        // Better way: use frappe.upload.upload_file or just standard XHR
-        // Let's use internal `frappe.upload.make_xhr_request` if we want, or simple manual XHR
-
+        // Use standard XHR for reliable file upload
         const xhr = new XMLHttpRequest();
         xhr.open("POST", "/api/method/upload_file");
         xhr.setRequestHeader("X-Frappe-CSRF-Token", frappe.csrf_token);
 
         xhr.onreadystatechange = () => {
-            if (xhr.readyState === 4 && xhr.status === 200) {
-                const r = JSON.parse(xhr.responseText);
-                if (r.message) {
-                    this.frm.set_value("face_image", r.message.file_url);
-                    this.frm.save_or_update();
-                    frappe.msgprint(__("Face Enrolled Successfully!"));
+            if (xhr.readyState === 4) {
+                frappe.hide_progress();
+                if (xhr.status === 200) {
+                    const r = JSON.parse(xhr.responseText);
+                    if (r.message) {
+                        // Success
+                        this.frm.set_value("face_image", r.message.file_url);
+                        this.frm.save_or_update();
+                        frappe.msgprint({
+                            title: __('Success'),
+                            indicator: 'green',
+                            message: __('Face Enrolled & Saved Successfully!')
+                        });
+                    }
+                } else {
+                    // Error
+                    let errorMsg = "Upload Failed";
+                    try {
+                        const r = JSON.parse(xhr.responseText);
+                        if (r._server_messages) {
+                            errorMsg = JSON.parse(r._server_messages).join("\n");
+                        }
+                    } catch (e) { }
+                    frappe.msgprint({
+                        title: __('Upload Error'),
+                        indicator: 'red',
+                        message: errorMsg
+                    });
                 }
             }
         };
