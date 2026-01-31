@@ -960,141 +960,158 @@
 
 
     /* -----------------------------------------------------------
-     *  🛡️ RANDOMIZED LIVENESS CHALLENGE
+     *  🛡️ ROBUST DOUBLE-BLINK LIVENESS (Anti-Spoofing)
      * ----------------------------------------------------------- */
-    let currentChallenge = null;
-    let challengeStartTime = 0;
-    let verifiedStartTime = 0; // Track hold duration
-    const CHALLENGE_TIMEOUT = 4000; // 4 seconds to perform action
+    // Rolling Average to filter noise (static photo jitter)
+    const earHistory = [];
+    const HISTORY_SIZE = 5;
 
-    // Possible Challenges
-    const CHALLENGES = [
-      { type: 'BLINK', text: "Please BLINK Eyes 😉", icon: "😉" },
-      { type: 'MOUTH', text: "Open MOUTH Wide 😮", icon: "😮" },
-      { type: 'TURN_LEFT', text: "Turn Head LEFT ⬅️", icon: "⬅️" },
-      { type: 'TURN_RIGHT', text: "Turn Head RIGHT ➡️", icon: "➡️" }
-    ];
+    function getSmoothedEAR(ear) {
+      earHistory.push(ear);
+      if (earHistory.length > HISTORY_SIZE) earHistory.shift();
+      const sum = earHistory.reduce((a, b) => a + b, 0);
+      return sum / earHistory.length;
+    }
+
+    const noseHistory = [];
+    function checkStability(landmarks) {
+      const nose = landmarks[30]; // Point 30 is nose tip
+      noseHistory.push(nose);
+      if (noseHistory.length > 5) noseHistory.shift();
+      if (noseHistory.length < 5) return true; // not enough data
+
+      // Calculate max movement
+      let maxDist = 0;
+      for (let i = 1; i < noseHistory.length; i++) {
+        const dx = noseHistory[i].x - noseHistory[i - 1].x;
+        const dy = noseHistory[i].y - noseHistory[i - 1].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > maxDist) maxDist = dist;
+      }
+
+      // Tolerance: If any movement > 10px (relative? need to normalize)
+      // Landmarks are naturally in image coords. face-api usually normalized if we use normalized results?
+      // Actually here landmarks are resized to canvas dims.
+      // Let's say maxDist should be small. > 5-10 implies movement.
+      return maxDist < 12;
+    }
+
+    // States: 
+    // 0 = Waiting for 1st Blink (Open)
+    // 1 = 1st Blink Down (Closed)
+    // 2 = 1st Blink Up (Open again) -> Wait for 2nd
+    // 3 = 2nd Blink Down (Closed)
+    // 4 = 2nd Blink Up (Verified)
+    let blinkState = 0;
+    let blinkStateTime = 0;
+
+    // Tighter Thresholds
+    const THRESH_OPEN = 0.35;   // Must be wide open
+    const THRESH_CLOSED = 0.18; // Must be fully closed
 
     function runLivenessChallenge(det) {
       const now = Date.now();
       const hint = document.getElementById("camera-hint");
-      const landmarks = det.landmarks.positions;
 
-      // 1. If no challenge active, pick one randomly
-      if (!currentChallenge) {
-        verifiedStartTime = 0; // Reset hold
+      const rawEar = getEAR(det.landmarks.positions);
+      const ear = getSmoothedEAR(rawEar); // Use averaged EAR
 
-        // Wait for face to be somewhat center/stable before issuing challenge
-        const yaw = getYaw(landmarks);
-        // Relaxed "Look Straight" from 0.15 to 0.25 to avoid stuck state
-        if (Math.abs(yaw) > 0.25) {
+      // Timeout Reset (if stuck in a state too long)
+      if (blinkState > 0 && now - blinkStateTime > 3000) {
+        blinkState = 0;
+        blinkStateTime = 0;
+        hint.innerText = "Timeout. Blinks too slow.";
+        return;
+      }
+
+      // STATE MACHINE
+      if (blinkState === 0) {
+        // Waiting for start
+        hint.innerText = "Please BLINK Eyes (2 Times) 😉";
+        hint.style.color = "#fff";
+
+        // 1. POSE CHECK: Must look straight
+        const yaw = getYaw(det.landmarks.positions);
+        const pitch = getPitch(det.landmarks.positions);
+        if (Math.abs(yaw) > 0.15 || Math.abs(pitch) > 0.15) {
           hint.innerText = "Look Straight First 😐";
           return;
         }
 
-        const idx = Math.floor(Math.random() * CHALLENGES.length);
-        currentChallenge = CHALLENGES[idx];
-        challengeStartTime = now;
-
-        hint.innerText = currentChallenge.text;
-        hint.style.fontSize = "22px";
-        hint.style.fontWeight = "bold";
-        // Play sound
-        speak(currentChallenge.text);
-        return;
-      }
-
-      // 2. Check Timeout
-      if (now - challengeStartTime > CHALLENGE_TIMEOUT) {
-        resetChallenge("Too Slow! ❌");
-        return;
-      }
-
-      // 3. Verify Action
-      const isVerified = verifyAction(currentChallenge.type, landmarks);
-
-      if (isVerified) {
-        if (verifiedStartTime === 0) {
-          verifiedStartTime = now;
+        // 2. STABILITY CHECK: Face must be still
+        if (!checkStability(det.landmarks.positions)) {
+          hint.innerText = "Hold Still...";
+          return;
         }
 
-        const elapsed = now - verifiedStartTime;
-        const required = 800; // 800ms hold
+        if (ear < THRESH_CLOSED) {
+          // Started closed?
+          hint.innerText = "Open Eyes Wide First 👁️";
+        }
 
-        if (elapsed > required) {
-          // SUCCESS
-          // detecting = false; // Don't pause yet, wait for capture
-          hint.innerText = "Verified! " + currentChallenge.icon;
-          show3DNotify('in', `${currentChallenge.icon} Verified`);
+        // Detect 1st Blink Down
+        if (ear < THRESH_CLOSED && checkStability(det.landmarks.positions)) {
+          blinkState = 1;
+          blinkStateTime = now;
+          hint.innerText = "1st Blink...";
+          // Tiny haptic/sound
+          playTone(600, 50, 'sine', 0.05);
+        }
 
-          isLivenessConfirmed = true; // ✅ Mark as safe
+      } else if (blinkState === 1) {
+        // Waiting for 1st Open
+        if (ear > THRESH_OPEN) {
+          blinkState = 2;
+          blinkStateTime = now;
+          hint.innerText = "Blink Again... 😉";
+        }
 
-          // Only auto-capture if enabled, otherwise just let them click
+      } else if (blinkState === 2) {
+
+        if (!checkStability(det.landmarks.positions)) {
+          // If they start moving wildly between blinks, maybe reset?
+          // For now, just wait for stability before accepting down
+          hint.innerText = "Hold Still...";
+          return;
+        }
+
+        // Waiting for 2nd Blink Down
+        if (ear < THRESH_CLOSED) {
+          blinkState = 3;
+          blinkStateTime = now;
+          hint.innerText = "2nd Blink...";
+          playTone(600, 50, 'sine', 0.05);
+        }
+
+      } else if (blinkState === 3) {
+        // Waiting for 2nd Open (Finish)
+        if (ear > THRESH_OPEN) {
+          // SUCCESS!
+          blinkState = 4;
+
+          hint.innerText = "Verified! Live Face Detected ✅";
+          hint.style.color = "#4ade80";
+          show3DNotify('in', `😉 Double Blink Verified`);
+
+          playSuccessTone('soft');
+          isLivenessConfirmed = true;
+          blinkState = 0; // Reset
+
           if (feature_autocapture.checked) {
             setTimeout(() => {
               handleAutoCapture(det);
-              resetChallenge(null);
-              // detecting = true;
-            }, 600);
-          } else {
-            hint.innerText = "Liveness Verified! Click Capture 📸";
-            resetChallenge(null); // Clear challenge but keep verified status conceptually? 
-            // Actually resetChallenge clears currentChallenge only. We need to keep isLivenessConfirmed true until face lost.
+            }, 500);
           }
-        } else {
-          // HOLDING...
-          const progress = Math.min(100, (elapsed / required) * 100);
-          hint.innerText = `Hold it... ${Math.floor(progress)}%`;
         }
-
-      } else {
-        // Action broken/not met
-        verifiedStartTime = 0;
-        // Keep showing instruction
-        hint.innerText = currentChallenge.text;
       }
     }
 
     function resetChallenge(failMsg) {
-      currentChallenge = null;
-      const hint = document.getElementById("camera-hint");
+      blinkStateTime = 0;
       if (failMsg) {
+        const hint = document.getElementById("camera-hint");
         hint.innerText = failMsg;
-        show3DNotify('error', failMsg);
       }
-    }
-
-    function verifyAction(type, landmarks) {
-      const ear = getEAR(landmarks);
-      const yaw = getYaw(landmarks);
-      const mar = getMAR(landmarks); // Mouth Aspect Ratio
-      const roll = getRoll(landmarks); // Head Pitch/Roll (Tilt)
-      const pitch = getPitch(landmarks); // Head Nod (Up/Down)
-
-      // 1. BLINK: EAR < 0.35
-      if (type === 'BLINK') {
-        return (Math.abs(yaw) < 0.30 && ear < 0.35);
-      }
-
-      // 2. MOUTH: MAR > 0.5 (Open)
-      if (type === 'MOUTH') {
-        return (mar > 0.50);
-      }
-
-      // 3. TURN LEFT: Yaw < -0.15
-      // STRICT CONSTRAINT: 
-      // Roll < 0.12 (~7 deg). Phone twists cause high roll.
-      // Pitch < 0.15 (~8 deg). Phone twists cause pitch.
-      if (type === 'TURN_LEFT') {
-        return (yaw < -0.15 && Math.abs(roll) < 0.12 && Math.abs(pitch) < 0.15);
-      }
-
-      // 4. TURN RIGHT: Yaw > 0.15
-      if (type === 'TURN_RIGHT') {
-        return (yaw > 0.15 && Math.abs(roll) < 0.12 && Math.abs(pitch) < 0.15);
-      }
-
-      return false;
     }
 
     /* ---------- Geometry Helpers ---------- */
