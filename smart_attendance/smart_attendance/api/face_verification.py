@@ -123,7 +123,7 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
              faces = DeepFace.extract_faces(
                  img_path=temp_img_path, 
                  detector_backend='opencv',
-                 enforce_detection=True,
+                 enforce_detection=False,
                  align=True,
                  anti_spoofing=True
              )
@@ -131,13 +131,21 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
             return {"ok": False, "message": "No face detected in image."}
         except Exception as e:
             frappe.log_error(f"DeepFace Extract Error: {e}")
-            return {"ok": False, "message": "Face analysis failed."}
+            # If torch is missing, this usually catches it.
+            return {"ok": False, "message": "Face analysis failed. (Internal Error)"}
             
         if not faces:
              return {"ok": False, "message": "No face detected."}
              
+        # Filter for valid faces (DeepFace can return dummy results when enforce_detection=False)
+        # We check if confidence is reasonable
+        valid_faces = [f for f in faces if f.get('confidence', 0) > 0.0]
+        
+        if not valid_faces:
+             return {"ok": False, "message": "No face detected (Low Confidence)."}
+
         # Check first face (assuming single user)
-        main_face = faces[0]
+        main_face = valid_faces[0]
         
         # Liveness Check
         if not main_face.get("is_real", True):
