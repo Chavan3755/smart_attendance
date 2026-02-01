@@ -60,6 +60,21 @@ class EmployeeFace(Document):
             # 5) Save to DB
             self.db_set("encoding", encoding_str, update_modified=False)
 
+            # 6) FIX: Ensure File is attached to this Document (not new-employee-face-...)
+            if self.face_image:
+                 files = frappe.get_all(
+                    "File", 
+                    filters={"file_url": self.face_image}, 
+                    fields=["name", "attached_to_name"]
+                 )
+                 for f in files:
+                     if f.attached_to_name != self.name:
+                         frappe.db.set_value("File", f.name, {
+                             "attached_to_doctype": "Employee Face",
+                             "attached_to_name": self.name,
+                             "is_private": 0
+                         })
+
             frappe.log_error(
                 title="EmployeeFace Encoding Encoded",
                 message=f"{self.name}: Vector generated (len={len(vector)})",

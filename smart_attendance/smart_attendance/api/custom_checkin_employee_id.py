@@ -18,7 +18,7 @@ def get_last_log(employee_id):
     last_log = frappe.db.sql("""
         SELECT log_type FROM `tabEmployee Checkin`
         WHERE employee = %s
-        ORDER BY creation DESC
+        ORDER BY time DESC
         LIMIT 1
     """, (employee_id,))
     
@@ -56,8 +56,31 @@ def mark_kiosk_attendance(employee_id, log_type=None):
 
     # Determine log type if not provided
     if not log_type:
-        last = get_last_log(employee_id)
-        log_type = "OUT" if last == "IN" else "IN"
+        # Fetch last log details (Type + Time)
+        last_checkin = frappe.db.get_value("Employee Checkin", 
+            {"employee": employee_id}, 
+            ["log_type", "time"], 
+            order_by="time desc"
+        )
+
+        if last_checkin:
+            l_type, l_time = last_checkin
+            
+            # Default toggle behavior
+            log_type = "OUT" if l_type == "IN" else "IN"
+            
+            # 🧠 Smart Correction:
+            # If last was 'IN' but it was > 15 hours ago (e.g. forgot to checkout yesterday),
+            # then today morning should be 'IN'.
+            if l_type == "IN":
+                # Calculate diff
+                l_datetime = frappe.utils.get_datetime(l_time)
+                diff_hours = frappe.utils.time_diff_in_hours(frappe.utils.now_datetime(), l_datetime)
+                
+                if diff_hours > 15:
+                    log_type = "IN"
+        else:
+            log_type = "IN"
 
     # Create Checkin
     checkin = frappe.get_doc({
