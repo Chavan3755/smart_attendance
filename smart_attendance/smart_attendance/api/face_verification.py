@@ -124,7 +124,8 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
                  img_path=temp_img_path, 
                  detector_backend='opencv',
                  enforce_detection=True,
-                 align=True
+                 align=True,
+                 anti_spoofing=True
              )
         except ValueError:
             return {"ok": False, "message": "No face detected in image."}
@@ -137,6 +138,14 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
              
         # Check first face (assuming single user)
         main_face = faces[0]
+        
+        # Liveness Check
+        if not main_face.get("is_real", True):
+             return {
+                 "ok": False, 
+                 "message": "Liveness check failed. Spoofing detected.",
+                 "reason": "spoofing_detected"
+             }
 
 
         # 3️⃣ IDENTIFY / VERIFY
@@ -253,7 +262,7 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
         log.time = now_datetime()
         log.log_type = final_log_type
         log.distance = match_distance
-        log.details = f"Liveness: Skipped, Dist: {match_distance:.4f}"
+        log.details = f"Liveness: Pass, Dist: {match_distance:.4f}"
         log.insert(ignore_permissions=True)
     
         attach_image_to_fal(log.name, image_base64)
