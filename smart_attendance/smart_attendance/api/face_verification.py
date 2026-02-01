@@ -116,7 +116,7 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
         return {"ok": False, "message": "Invalid image data."}
 
     try:
-        # 2️⃣ Face Detection (Liveness Removed as per request)
+        # 2️⃣ Face Detection
         try:
              # Use enforce_detection=False to avoid hard crash on "No Face"
              # verification step will handle specific matching
@@ -137,8 +137,6 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
              
         # Check first face (assuming single user)
         main_face = faces[0]
-        
-        # Liveness check removed
 
 
         # 3️⃣ IDENTIFY / VERIFY
