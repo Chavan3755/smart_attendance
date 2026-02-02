@@ -1,58 +1,117 @@
 import frappe
 import numpy as np
-from frappe.utils import now_datetime
-from PIL import Image
-import face_recognition
+from frappe.utils import now_datetime, get_site_path
 import base64
-import io
+import os
+import tempfile
 from frappe.utils.file_manager import save_file
+from smart_attendance.smart_attendance.api.custom_checkin_employee_id import mark_kiosk_attendance
+
+# Try importing DeepFace and OpenCV
+try:
+    from deepface import DeepFace
+    import cv2
+except ImportError:
+    DeepFace = None
+    cv2 = None
 
 
-# ------------ Helper: Employee ka saved encoding ------------
+# ------------ Helper: Get Employee Image Paths ------------
 
-def _get_employee_encoding(employee: str):
-    row = frappe.get_all(
+def _get_all_employee_images():
+    """
+    Returns a list of tuples: (employee, absolute_file_path)
+    Only considers employees who have a 'face_image' attached.
+    """
+    rows = frappe.get_all(
         "Employee Face",
-        filters={"employee": employee, "encoding": ["is", "set"]},
-        fields=["encoding"],
-        order_by="creation desc",
-        limit=1,
+        filters={"face_image": ["is", "set"]},
+        fields=["employee", "face_image"]
     )
+    
+    data = []
+    for r in rows:
+        # face_image is like "/files/abc.jpg" or "/private/files/abc.jpg"
+        relative_path = r.face_image
+        
+        full_path = None
+        
+        if relative_path.startswith("/private/files/"):
+             filename = relative_path.replace("/private/files/", "")
+             full_path = get_site_path("private", "files", filename)
+             
+        elif relative_path.startswith("/files/"):
+             filename = relative_path.replace("/files/", "")
+             full_path = get_site_path("public", "files", filename)
+             
+        if full_path and os.path.exists(full_path):
+             data.append((r.employee, full_path))
+    
+    return data
 
-    if not row:
-        frappe.throw("Employee ka enrolled face (encoding) nahi mila.")
+# ------------ Helper: Save Base64 to Temp File ------------
 
-    encoding_str = row[0]["encoding"]
-    if not encoding_str:
-        frappe.throw("Employee ke liye encoding empty hai.")
-
-    try:
-        vec = np.fromstring(encoding_str, sep=",", dtype=float)
-    except Exception:
-        frappe.throw("Saved encoding corrupt hai.")
-
-    return vec
-
-
-# ------------ Helper: Camera se aayi base64 image se encoding ------------
-
-def _encoding_from_base64(image_base64: str):
+def _save_base64_to_temp(image_base64: str):
     if not image_base64:
         return None
+        
+    if "," in image_base64:
+        image_base64 = image_base64.split(",")[1]
+        
+    try:
+        image_bytes = base64.b64decode(image_base64)
+    except Exception:
+        return None
+    
+    # Create a temp file
+    # DeepFace needs a path
+    tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+    tfile.write(image_bytes)
+    tfile.flush()
+    tfile.close()
+    return tfile.name
 
-    image_bytes = base64.b64decode(image_base64)
-    pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+# ------------ ✅ LIVENESS CHECK HELPER ------------
 
-    img_np = np.asarray(pil_image, dtype=np.uint8)
-    img_np = np.ascontiguousarray(img_np)
+def check_texture_liveness(image_path):
+    """
+    Checks for liveness using Laplacian Variance (Texture Analysis).
+    Low variance (< 25) indicates a blur/flat image (screen or photo).
+    """
+    if cv2 is None:
+        return True, "OpenCV not installed, skipping liveness."
 
-    encodings = face_recognition.face_encodings(img_np)
-    return encodings[0] if encodings else None
+    try:
+        # Load image
+        image = cv2.imread(image_path)
+        if image is None:
+             return False, "Could not load image."
+             
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+        # Calculate Laplacian Variance
+        texture = cv2.Laplacian(gray, cv2.CV_64F).var()
+        
+        # Use user threshold 25
+        if texture < 25:
+             return False, "PHOTO / MOBILE DETECTED"
+             
+        return True, "Live"
+        
+    except Exception as e:
+        frappe.log_error(f"Liveness Check Error: {e}")
+        # If error, fail safe? Or allow? 
+        # Allowing for now to prevent blocking valid users on minor errors 
+        # but logging it.
+        return True, "Error checking liveness"
 
 
 # ------------ ✅ IMAGE ATTACH HELPER ------------
 
 def attach_image_to_fal(fal_name, image_base64):
+    if "," in image_base64:
+        image_base64 = image_base64.split(",")[1]
+
     image_bytes = base64.b64decode(image_base64)
 
     file_doc = save_file(
@@ -74,65 +133,220 @@ def attach_image_to_fal(fal_name, image_base64):
 # ------------ ✅ MAIN API ------------
 
 @frappe.whitelist()
-def mark_attendance_by_face(employee: str, image_base64: str, log_type: str = "AUTO", tolerance: float = 0.6):
+def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_type: str = "AUTO", tolerance: float = 0.40):
+    """
+    Inputs:
+        employee: Optional.
+        image_base64: Required.
+        log_type: "IN", "OUT", or "AUTO".
+        tolerance: Matching threshold for DeepFace (VGG-Face usually 0.40 is good strictness).
+    """
+    
+    if not DeepFace:
+        return {"ok": False, "message": "Server Error: DeepFace library not installed/loaded."}
 
-    # 1️⃣ Employee encoding
-    saved_vector = _get_employee_encoding(employee)
+    if not image_base64:
+        return {"ok": False, "message": "No image provided."}
 
-    # 2️⃣ Current image encoding
-    current_vector = _encoding_from_base64(image_base64)
+    # 1️⃣ Save Input Image to Temp
+    temp_img_path = _save_base64_to_temp(image_base64)
+    if not temp_img_path:
+        return {"ok": False, "message": "Invalid image data."}
 
-    if current_vector is None:
+    # 1.5 LIVENESS CHECK (Texture)
+    is_live, live_msg = check_texture_liveness(temp_img_path)
+    if not is_live:
+         # Cleanup
+         if os.path.exists(temp_img_path):
+             os.remove(temp_img_path)
+         return {
+             "ok": False, 
+             "message": live_msg,
+             "reason": "spoofing_detected"
+         }
+
+    try:
+
+        # 2️⃣ Face Detection
+        try:
+             # Use enforce_detection=False to avoid hard crash on "No Face"
+             # verification step will handle specific matching
+             faces = DeepFace.extract_faces(
+                 img_path=temp_img_path, 
+                 detector_backend='opencv',
+                 enforce_detection=False,
+                 align=True,
+                 anti_spoofing=True
+             )
+        except ValueError:
+            return {"ok": False, "message": "No face detected in image."}
+        except Exception as e:
+            frappe.log_error(f"DeepFace Extract Error: {e}")
+            # If torch is missing, this usually catches it.
+            return {"ok": False, "message": "Face analysis failed. (Internal Error)"}
+            
+        if not faces:
+             return {"ok": False, "message": "No face detected."}
+             
+        # Filter for valid faces (DeepFace can return dummy results when enforce_detection=False)
+        # We check if confidence is reasonable
+        valid_faces = [f for f in faces if f.get('confidence', 0) > 0.0]
+        
+        if not valid_faces:
+             return {"ok": False, "message": "No face detected (Low Confidence)."}
+
+        # Check first face (assuming single user)
+        main_face = valid_faces[0]
+        
+        # Liveness Check
+        if not main_face.get("is_real", True):
+             return {
+                 "ok": False, 
+                 "message": "Liveness check failed. Spoofing detected.",
+                 "reason": "spoofing_detected"
+             }
+
+
+        # 3️⃣ IDENTIFY / VERIFY
+        # 3️⃣ IDENTIFY / VERIFY using EMBEDDINGS (Faster & More Reliable)
+        
+        # A. Extract Embedding from Input
+        try:
+            # represent returns list of dicts: [{"embedding": [...], ...}]
+            input_embedding_objs = DeepFace.represent(
+                img_path=temp_img_path,
+                model_name="VGG-Face",
+                enforce_detection=True,
+                detector_backend="opencv"
+            )
+            
+            if not input_embedding_objs:
+                 return {"ok": False, "message": "Face features could not be extracted."}
+                 
+            input_vector = input_embedding_objs[0]["embedding"]
+            
+        except Exception as e:
+            frappe.log_error(f"DeepFace Represent Error: {e}")
+            return {"ok": False, "message": "Face feature extraction failed."}
+
+        detected_employee = employee
+        match_distance = 1.0 
+        
+        # B. Fetch Stored Encodings
+        # We fetch (employee, encoding_json) from DB
+        # Only those with encodings
+        candidates = frappe.db.sql("""
+            SELECT employee, encoding 
+            FROM `tabEmployee Face` 
+            WHERE encoding IS NOT NULL AND encoding != ''
+        """, as_dict=True)
+        
+        if not candidates:
+             frappe.log_error("Face Verification", "No registered face data found in Employee Face table.")
+             return {"ok": False, "message": "No registered face data found."}
+
+        best_match_emp = None
+        best_match_dist = 100.0
+        
+        # Helper: Cosine Distance
+        def find_cosine_distance(source_representation, test_representation):
+            if not isinstance(source_representation, list) and not isinstance(source_representation, np.ndarray):
+                 return 1.0
+            a = np.matmul(np.transpose(source_representation), test_representation)
+            b = np.sum(np.multiply(source_representation, source_representation))
+            c = np.sum(np.multiply(test_representation, test_representation))
+            return 1 - (a / (np.sqrt(b) * np.sqrt(c)))
+
+        # C. Compare against Candidates
+        import json
+        
+        for cand in candidates:
+            # If explicit employee requested, filter
+            if employee and cand.employee != employee:
+                continue
+                
+            try:
+                db_vector = []
+                # 1. Try JSON load
+                try:
+                    db_vector = json.loads(cand.encoding)
+                except:
+                    # 2. Try CSV split
+                    if isinstance(cand.encoding, str):
+                        db_vector = [float(x) for x in cand.encoding.split(',')]
+                
+                # Ensure it's a list/array of numbers
+                if not db_vector or len(db_vector) < 10: # Basic validity check
+                    continue
+
+                # Compare
+                dist = find_cosine_distance(input_vector, db_vector)
+                
+                if dist < best_match_dist:
+                    best_match_dist = dist
+                    best_match_emp = cand.employee
+                    
+                # Optimization: Break if very close match
+                if dist < 0.20:
+                    break
+                    
+            except Exception as e:
+                # frappe.log_error("Face Match Error", str(e))
+                continue
+
+        # D. Validate Match
+        if best_match_dist <= float(tolerance):
+            detected_employee = best_match_emp
+            match_distance = best_match_dist
+        else:
+             return {
+                 "ok": False,
+                 "reason": "face_not_matched",
+                 "distance": best_match_dist,
+                 "tolerance": float(tolerance),
+                 "message": "Face not recognized."
+             }
+
+        # 4️⃣ MARK ATTENDANCE
+        kiosk_result = mark_kiosk_attendance(detected_employee, log_type if log_type != "AUTO" else None)
+        
+        if not kiosk_result.get("ok"):
+            return kiosk_result
+    
+        final_log_type = kiosk_result.get("log_type")
+    
+        # 5️⃣ AUDIT LOG
+        log = frappe.new_doc("Face Attendance Log")
+        log.employee = detected_employee
+        log.time = now_datetime()
+        log.log_type = final_log_type
+        log.distance = match_distance
+        log.details = f"Liveness: Pass, Dist: {match_distance:.4f}"
+        log.insert(ignore_permissions=True)
+    
+        attach_image_to_fal(log.name, image_base64)
+    
+        frappe.db.commit()
+    
         return {
-            "ok": False,
-            "reason": "no_face",
-            "message": "Image me face detect nahi hua.",
+            "ok": True,
+            "log_name": log.name,
+            "employee": detected_employee,
+            "employee_name": frappe.db.get_value("Employee", detected_employee, "employee_name"),
+            "log_type": final_log_type,
+            "distance": match_distance,
+            "message": f"Welcome {detected_employee}, marked {final_log_type} (Liveness OK)"
         }
 
-    # 3️⃣ Face compare
-    distance = float(face_recognition.face_distance([saved_vector], current_vector)[0])
-    is_match = distance <= float(tolerance)
-
-    if not is_match:
-        return {
-            "ok": False,
-            "reason": "face_not_matched",
-            "distance": distance,
-            "tolerance": float(tolerance),
-        }
-
-    # 4️⃣ AUTO IN/OUT toggle
-    if log_type == "AUTO":
-        last = frappe.get_all(
-            "Face Attendance Log",
-            filters={"employee": employee},
-            fields=["log_type", "time"],
-            order_by="time desc",
-            limit=1,
-        )
-
-        log_type_final = "OUT" if last and last[0].get("log_type") == "IN" else "IN"
-    else:
-        log_type_final = log_type
-
-    # 5️⃣ Create Face Attendance Log
-    log = frappe.new_doc("Face Attendance Log")
-    log.employee = employee
-    log.time = now_datetime()
-    log.log_type = log_type_final
-    log.distance = distance
-    log.insert(ignore_permissions=True)
-
-    # ✅✅✅ 6️⃣ IMAGE ATTACH ✅✅✅
-    attach_image_to_fal(log.name, image_base64)
-
-    frappe.db.commit()
-
-    return {
-        "ok": True,
-        "log_name": log.name,
-        "employee": employee,
-        "log_type": log_type_final,
-        "distance": distance,
-        "tolerance": float(tolerance),
-    }
+    except Exception as e:
+        frappe.log_error(f"DeepFace Error: {str(e)}")
+        # Provide user friendly error
+        return {"ok": False, "message": f"System Error during verification."}
+        
+    finally:
+        # Cleanup
+        if os.path.exists(temp_img_path):
+            try:
+                os.remove(temp_img_path)
+            except:
+                pass
