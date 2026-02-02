@@ -12,7 +12,8 @@ dependencies = [
     "face_recognition",
     "deepface",
     "tf-keras",
-    "torch"
+    "torch",
+    "opencv-python"
 ]
 
 [build-system]

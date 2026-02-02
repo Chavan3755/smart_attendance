@@ -7,11 +7,14 @@ import tempfile
 from frappe.utils.file_manager import save_file
 from smart_attendance.smart_attendance.api.custom_checkin_employee_id import mark_kiosk_attendance
 
-# Try importing DeepFace
+# Try importing DeepFace and OpenCV
 try:
     from deepface import DeepFace
+    import cv2
 except ImportError:
     DeepFace = None
+    cv2 = None
+
 
 # ------------ Helper: Get Employee Image Paths ------------
 
@@ -68,6 +71,41 @@ def _save_base64_to_temp(image_base64: str):
     tfile.close()
     return tfile.name
 
+# ------------ ✅ LIVENESS CHECK HELPER ------------
+
+def check_texture_liveness(image_path):
+    """
+    Checks for liveness using Laplacian Variance (Texture Analysis).
+    Low variance (< 25) indicates a blur/flat image (screen or photo).
+    """
+    if cv2 is None:
+        return True, "OpenCV not installed, skipping liveness."
+
+    try:
+        # Load image
+        image = cv2.imread(image_path)
+        if image is None:
+             return False, "Could not load image."
+             
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+        # Calculate Laplacian Variance
+        texture = cv2.Laplacian(gray, cv2.CV_64F).var()
+        
+        # Use user threshold 25
+        if texture < 25:
+             return False, "PHOTO / MOBILE DETECTED"
+             
+        return True, "Live"
+        
+    except Exception as e:
+        frappe.log_error(f"Liveness Check Error: {e}")
+        # If error, fail safe? Or allow? 
+        # Allowing for now to prevent blocking valid users on minor errors 
+        # but logging it.
+        return True, "Error checking liveness"
+
+
 # ------------ ✅ IMAGE ATTACH HELPER ------------
 
 def attach_image_to_fal(fal_name, image_base64):
@@ -115,7 +153,20 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
     if not temp_img_path:
         return {"ok": False, "message": "Invalid image data."}
 
+    # 1.5 LIVENESS CHECK (Texture)
+    is_live, live_msg = check_texture_liveness(temp_img_path)
+    if not is_live:
+         # Cleanup
+         if os.path.exists(temp_img_path):
+             os.remove(temp_img_path)
+         return {
+             "ok": False, 
+             "message": live_msg,
+             "reason": "spoofing_detected"
+         }
+
     try:
+
         # 2️⃣ Face Detection
         try:
              # Use enforce_detection=False to avoid hard crash on "No Face"
