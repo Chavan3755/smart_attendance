@@ -1,662 +1,689 @@
-{% extends "templates/base.html" %}
-{% block title %}Face Attendance Kiosk — Aurora Motion (Merged Final){% endblock %}
+<!DOCTYPE html>
+<html lang="en">
 
-{% block navbar %}{% endblock %}
-{% block footer %}{% endblock %}
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <title>Face Attendance Kiosk — Aurora Motion</title>
+  <link rel="shortcut icon" href="/assets/frappe/images/frappe-favicon.svg" type="image/x-icon">
 
-{% block content %}
-<!-- Merged: Aurora Motion UI + face-api + Frappe attendance + Theme customizer + Auto-capture + 3D notify + Holidays -->
-<style>
-  :root {
-    --bg-1: #0f1724;
-    --bg-2: #071029;
-    --aurora-a: #7c3aed;
-    --aurora-b: #06b6d4;
-    --button-a: #7c3aed;
-    --button-b: #06b6d4;
-    --accent-gradient: linear-gradient(90deg, var(--aurora-a), var(--aurora-b));
-    --fg: #e6f0fb;
-    --muted: #9fb3c8;
-    --radius: 16px;
-    --card-shadow: 0 12px 36px rgba(2, 6, 23, 0.45);
-    font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
-  }
-
-  .light-mode {
-    --bg-1: #f8fafc;
-    --bg-2: #e2e8f0;
-    --fg: #0f1724;
-    --muted: #475569;
-  }
-
-  #camera-hint {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(0, 0, 0, 0.45);
-    padding: 10px 16px;
-    border-radius: 10px;
-    font-size: 15px;
-    color: #e5e7eb;
-    pointer-events: none;
-    z-index: 6;
-  }
-
-  #face-guide {
-    position: absolute;
-    width: 180px;
-    height: 240px;
-    border: 2px dashed rgba(255, 255, 255, 0.4);
-    border-radius: 50%;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-    z-index: 5;
-  }
-
-
-  body {
-    margin: 0;
-    min-height: 100vh;
-    background: linear-gradient(180deg, var(--bg-1), var(--bg-2));
-    color: var(--fg);
-    font-family: Inter, Arial, sans-serif;
-  }
-
-
-  /* Layout */
-  .page {
-    display: flex;
-    justify-content: center;
-    padding: 40px 12px;
-  }
-
-  .viewport {
-    width: 1200px;
-    max-width: calc(100% - 24px);
-    perspective: 1400px;
-  }
-
-  .outer {
-    border-radius: calc(var(--radius) + 8px);
-    padding: 18px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
-    box-shadow: 0 24px 80px rgba(2, 6, 23, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.03);
-  }
-
-  .card {
-    margin-top: -16px;
-    border-radius: var(--radius);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
-    padding: 14px;
-    transform-style: preserve-3d;
-    transition: transform .22s cubic-bezier(.2, .9, .2, 1), box-shadow .22s;
-    box-shadow: var(--card-shadow);
-    border: 1px solid rgba(255, 255, 255, 0.02);
-  }
-
-  .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .title {
-    font-size: 20px;
-    margin: 0;
-    color: var(--fg);
-    font-weight: 700;
-  }
-
-  .subtitle {
-    color: var(--muted);
-    font-size: 13px;
-    margin-top: 6px;
-  }
-
-  .layout {
-    display: grid;
-    grid-template-columns: 1fr 360px;
-    gap: 14px;
-    align-items: flex-start;
-  }
-
-  .left,
-  .right {
-    width: 100%;
-  }
-
-  .field {
-    margin-top: 10px;
-    text-align: left;
-  }
-
-  .label {
-    display: block;
-    font-size: 13px;
-    color: var(--muted);
-    margin-bottom: 6px;
-  }
-
-  .input {
-    width: 100%;
-    padding: 10px 12px;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.04);
-    background: rgba(255, 255, 255, 0.02);
-    color: var(--fg);
-    font-size: 15px;
-  }
-
-  .camera {
-    margin-top: 12px;
-    position: relative;
-    border-radius: 10px;
-    overflow: hidden;
-    height: 360px;
-    background: linear-gradient(180deg, rgba(3, 7, 14, 0.65), rgba(2, 6, 12, 0.82));
-    border: 1px solid rgba(255, 255, 255, 0.02);
-  }
-
-  .camera-inner {
-    position: absolute;
-    inset: 8px;
-    border-radius: 8px;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(6, 8, 16, 0.6);
-  }
-
-  .camera-bg {
-    position: absolute;
-    inset: 0;
-    background-size: cover;
-    background-position: center;
-    opacity: 0.12;
-    filter: blur(6px) saturate(85%);
-  }
-
-  video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-
-  .ribbon {
-    position: absolute;
-    width: 200%;
-    height: 160%;
-    top: -30%;
-    left: -50%;
-    background: linear-gradient(90deg, rgba(124, 58, 237, 0.12), rgba(6, 182, 212, 0.12));
-    transform: rotate(-12deg);
-    animation: floatRibbon 16s linear infinite;
-    filter: blur(28px);
-    opacity: 0.9;
-  }
-
-  @keyframes floatRibbon {
-    0% {
-      transform: translateX(-20%) rotate(-12deg) scale(.96);
+  <script>
+    window.frappe = {};
+    frappe.ready_events = [];
+    frappe.ready = function (fn) {
+    frappe.ready = function (fn) {
+      // Direct execute
+      fn();
     }
+    window.dev_server = false;
+    window.socketio_port = 9000;
+  </script>
+</head>
 
-    50% {
-      transform: translateX(8%) rotate(-10deg) scale(1.02);
-    }
+<body class="no-sidebar">
 
-    100% {
-      transform: translateX(-20%) rotate(-12deg) scale(.96);
-    }
-  }
+  <!-- Script Loader REMOVED - we are going standalone -->
+  <!-- <script type="text/javascript" src="/assets/frappe/dist/js/frappe-web.bundle.js"></script> -->
+  <script type="text/javascript" src="/assets/frappe/dist/js/bootstrap.bundle.min.js"></script>
 
-  .glow {
-    position: absolute;
-    inset: 8px;
-    border-radius: 8px;
-    pointer-events: none;
-    box-shadow: 0 0 40px rgba(124, 58, 237, 0.12), 0 0 80px rgba(6, 182, 212, 0.06) inset;
-    animation: glowPulse 4.5s ease-in-out infinite;
-    mix-blend-mode: screen;
-  }
+  <!-- CSRF Token -->
+  <script>
+    frappe.csrf_token = "{{ frappe.session.csrf_token }}";
+  </script>
 
-  @keyframes glowPulse {
-    0% {
-      filter: blur(8px) brightness(1.02);
-    }
+  <div id="page-content">
+    <!-- Merged: Aurora Motion UI + face-api + Frappe attendance + Theme customizer + Auto-capture + 3D notify + Holidays -->
+    <style>
+      :root {
+        --bg-1: #0f1724;
+        --bg-2: #071029;
+        --aurora-a: #7c3aed;
+        --aurora-b: #06b6d4;
+        --button-a: #7c3aed;
+        --button-b: #06b6d4;
+        --accent-gradient: linear-gradient(90deg, var(--aurora-a), var(--aurora-b));
+        --fg: #e6f0fb;
+        --muted: #9fb3c8;
+        --radius: 16px;
+        --card-shadow: 0 12px 36px rgba(2, 6, 23, 0.45);
+        font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+      }
 
-    50% {
-      filter: blur(14px) brightness(1.12);
-    }
+      .light-mode {
+        --bg-1: #f8fafc;
+        --bg-2: #e2e8f0;
+        --fg: #0f1724;
+        --muted: #475569;
+      }
 
-    100% {
-      filter: blur(8px) brightness(1.02);
-    }
-  }
+      #camera-hint {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.45);
+        padding: 10px 16px;
+        border-radius: 10px;
+        font-size: 15px;
+        color: #e5e7eb;
+        pointer-events: none;
+        z-index: 6;
+      }
 
-  #capture-btn {
-    display: none !important;
-    /* Fully hidden, auto-capture only */
-    background: #f97316;
-    border: none;
-    color: white;
-    padding: 14px 24px;
-    border-radius: 8px;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    box-shadow: 0 4px 6px -1px rgba(249, 115, 22, 0.4);
-    transition: all 0.2s;
-  }
+      #face-guide {
+        position: absolute;
+        width: 180px;
+        height: 240px;
+        border: 2px dashed rgba(255, 255, 255, 0.4);
+        border-radius: 50%;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        z-index: 5;
+      }
 
-  .badge {
-    position: absolute;
-    top: 12px;
-    left: 12px;
-    padding: 8px 12px;
-    border-radius: 999px;
-    font-weight: 700;
-    font-size: 13px;
-    color: #041226;
-    background: #fff;
-    transform-origin: center;
-    box-shadow: 0 10px 28px rgba(2, 6, 23, 0.12);
-    opacity: 0.98;
-  }
 
-  .badge.in {
-    background: linear-gradient(90deg, rgba(16, 185, 129, 0.95), rgba(6, 182, 212, 0.9));
-  }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: linear-gradient(180deg, var(--bg-1), var(--bg-2));
+        color: var(--fg);
+        font-family: Inter, Arial, sans-serif;
+      }
 
-  .badge.out {
-    background: linear-gradient(90deg, rgba(245, 158, 11, 0.95), rgba(234, 88, 12, 0.9));
-  }
 
-  .controls {
-    display: flex;
-    gap: 10px;
-    margin-top: 12px;
-  }
+      /* Layout */
+      .page {
+        display: flex;
+        justify-content: center;
+        padding: 40px 12px;
+      }
 
-  .capture-btn {
-    flex: 1;
-    padding: 12px 14px;
-    border-radius: 10px;
-    border: none;
-    cursor: pointer;
-    font-weight: 700;
-    font-size: 15px;
-    background: linear-gradient(90deg, var(--button-a), var(--button-b));
-    color: #fff;
-    box-shadow: 0 10px 28px rgba(12, 23, 40, 0.28);
-  }
+      .viewport {
+        width: 1200px;
+        max-width: calc(100% - 24px);
+        perspective: 1400px;
+      }
 
-  .small-btn {
-    padding: 10px 12px;
-    background: rgba(255, 255, 255, 0.02);
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.02);
-    color: var(--muted);
-    cursor: pointer;
-  }
+      .outer {
+        border-radius: calc(var(--radius) + 8px);
+        padding: 18px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+        box-shadow: 0 24px 80px rgba(2, 6, 23, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.03);
+      }
 
-  .result {
-    margin-top: 12px;
-    padding: 12px;
-    border-radius: 10px;
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: center;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
-    color: var(--fg);
-  }
+      .card {
+        margin-top: -16px;
+        border-radius: var(--radius);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+        padding: 14px;
+        transform-style: preserve-3d;
+        transition: transform .22s cubic-bezier(.2, .9, .2, 1), box-shadow .22s;
+        box-shadow: var(--card-shadow);
+        border: 1px solid rgba(255, 255, 255, 0.02);
+      }
 
-  .panel {
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.02);
-    padding: 12px;
-    border-radius: 10px;
-    color: var(--muted);
-    margin-bottom: 12px;
-  }
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
 
-  .panel h4 {
-    margin: 0 0 8px 0;
-    color: var(--fg);
-    font-size: 14px;
-  }
+      .title {
+        font-size: 20px;
+        margin: 0;
+        color: var(--fg);
+        font-weight: 700;
+      }
 
-  .row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin-top: 8px;
-  }
+      .subtitle {
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 6px;
+      }
 
-  .model-status {
-    font-size: 12px;
-    color: var(--muted);
-    margin-top: 6px;
-  }
+      .layout {
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        gap: 14px;
+        align-items: flex-start;
+      }
 
-  #bboxCanvas {
-    position: absolute;
-    left: 8px;
-    top: 8px;
-    width: calc(100% - 16px);
-    height: calc(100% - 16px);
-    pointer-events: none;
-  }
+      .left,
+      .right {
+        width: 100%;
+      }
 
-  .hidden {
-    display: none !important;
-  }
+      .field {
+        margin-top: 10px;
+        text-align: left;
+      }
 
-  .muted {
-    color: var(--muted);
-    font-size: 13px;
-  }
+      .label {
+        display: block;
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
 
-  @media (max-width:900px) {
-    .viewport {
-      width: 96%;
-    }
+      .input {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        background: rgba(255, 255, 255, 0.02);
+        color: var(--fg);
+        font-size: 15px;
+      }
 
-    .layout {
-      grid-template-columns: 1fr;
-    }
+      .camera {
+        margin-top: 12px;
+        position: relative;
+        border-radius: 10px;
+        overflow: hidden;
+        height: 360px;
+        background: linear-gradient(180deg, rgba(3, 7, 14, 0.65), rgba(2, 6, 12, 0.82));
+        border: 1px solid rgba(255, 255, 255, 0.02);
+      }
 
-    .camera {
-      height: 260px;
-    }
-  }
+      .camera-inner {
+        position: absolute;
+        inset: 8px;
+        border-radius: 8px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(6, 8, 16, 0.6);
+      }
 
-  .in-btn {
-    padding: 12px 18px;
-    border-radius: 10px;
-    border: none;
-    font-weight: 700;
-    font-size: 15px;
-    color: #fff;
-    cursor: pointer;
-    background: linear-gradient(90deg, var(--button-a), var(--button-b));
-    box-shadow: 0 10px 25px rgba(34, 197, 94, 0.35);
-  }
+      .camera-bg {
+        position: absolute;
+        inset: 0;
+        background-size: cover;
+        background-position: center;
+        opacity: 0.12;
+        filter: blur(6px) saturate(85%);
+      }
 
-  .out-btn {
-    padding: 12px 18px;
-    border-radius: 10px;
-    border: none;
-    font-weight: 700;
-    font-size: 15px;
-    color: #fff;
-    cursor: pointer;
-    background: linear-gradient(90deg, var(--button-a), var(--button-b));
-    box-shadow: 0 10px 25px rgba(239, 68, 68, 0.35);
-  }
+      video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
 
-  /* 3D notify */
-  .notify3d {
-    position: fixed;
-    top: 28px;
-    left: 50%;
-    transform: translateX(-50%) scale(.8);
-    min-width: 300px;
-    padding: 18px 28px;
-    border-radius: 16px;
-    font-weight: 700;
-    text-align: center;
-    font-size: 17px;
-    z-index: 9999;
-    color: #fff;
-    box-shadow: 0 25px 70px rgba(0, 0, 0, .5);
-    animation: pop3d .35s ease forwards;
-    opacity: 0;
-    pointer-events: none;
-  }
+      .ribbon {
+        position: absolute;
+        width: 200%;
+        height: 160%;
+        top: -30%;
+        left: -50%;
+        background: linear-gradient(90deg, rgba(124, 58, 237, 0.12), rgba(6, 182, 212, 0.12));
+        transform: rotate(-12deg);
+        animation: floatRibbon 16s linear infinite;
+        filter: blur(28px);
+        opacity: 0.9;
+      }
 
-  .notify3d.in {
-    background: linear-gradient(135deg, #16a34a, #22c55e);
-  }
+      @keyframes floatRibbon {
+        0% {
+          transform: translateX(-20%) rotate(-12deg) scale(.96);
+        }
 
-  .notify3d.out {
-    background: linear-gradient(135deg, #dc2626, #ef4444);
-  }
+        50% {
+          transform: translateX(8%) rotate(-10deg) scale(1.02);
+        }
 
-  .notify3d.error {
-    background: linear-gradient(135deg, #7f1d1d, #b91c1c);
-  }
+        100% {
+          transform: translateX(-20%) rotate(-12deg) scale(.96);
+        }
+      }
 
-  @keyframes pop3d {
-    0% {
-      transform: translateX(-50%) scale(.6);
-      opacity: .0
-    }
+      .glow {
+        position: absolute;
+        inset: 8px;
+        border-radius: 8px;
+        pointer-events: none;
+        box-shadow: 0 0 40px rgba(124, 58, 237, 0.12), 0 0 80px rgba(6, 182, 212, 0.06) inset;
+        animation: glowPulse 4.5s ease-in-out infinite;
+        mix-blend-mode: screen;
+      }
 
-    100% {
-      transform: translateX(-50%) scale(1);
-      opacity: 1
-    }
-  }
+      @keyframes glowPulse {
+        0% {
+          filter: blur(8px) brightness(1.02);
+        }
 
-  /* history panel */
-  .history {
-    margin-top: 12px;
-    background: rgba(255, 255, 255, 0.02);
-    padding: 10px;
-    border-radius: 10px;
-    max-height: 220px;
-    overflow: auto;
-  }
+        50% {
+          filter: blur(14px) brightness(1.12);
+        }
 
-  .history .row {
-    display: flex;
-    justify-content: space-between;
-    padding: 8px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
-  }
+        100% {
+          filter: blur(8px) brightness(1.02);
+        }
+      }
 
-  .history .row:last-child {
-    border-bottom: none;
-  }
+      #capture-btn {
+        display: none !important;
+        /* Fully hidden, auto-capture only */
+        background: #f97316;
+        border: none;
+        color: white;
+        padding: 14px 24px;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 4px 6px -1px rgba(249, 115, 22, 0.4);
+        transition: all 0.2s;
+      }
 
-  /* Holiday styles */
-  .holiday-item {
-    padding: 10px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    font-size: 14px;
-  }
+      .badge {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        font-weight: 700;
+        font-size: 13px;
+        color: #041226;
+        background: #fff;
+        transform-origin: center;
+        box-shadow: 0 10px 28px rgba(2, 6, 23, 0.12);
+        opacity: 0.98;
+      }
 
-  .holiday-item:last-child {
-    border-bottom: none;
-  }
+      .badge.in {
+        background: linear-gradient(90deg, rgba(16, 185, 129, 0.95), rgba(6, 182, 212, 0.9));
+      }
 
-  .holiday-range {
-    font-size: 12px;
-    color: var(--muted);
-    margin-bottom: 8px;
-  }
+      .badge.out {
+        background: linear-gradient(90deg, rgba(245, 158, 11, 0.95), rgba(234, 88, 12, 0.9));
+      }
 
-  /* 🔒 Hide all right panels by default */
-  .right .panel {
-    display: none !important;
-  }
+      .controls {
+        display: flex;
+        gap: 10px;
+        margin-top: 12px;
+      }
 
-  /* ✅ Show ONLY Holidays panel */
-  .right .holidays-panel {
-    display: block !important;
-  }
-</style>
+      .capture-btn {
+        flex: 1;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: none;
+        cursor: pointer;
+        font-weight: 700;
+        font-size: 15px;
+        background: linear-gradient(90deg, var(--button-a), var(--button-b));
+        color: #fff;
+        box-shadow: 0 10px 28px rgba(12, 23, 40, 0.28);
+      }
 
-<!-- Daily Logs Modal CSS -->
-<style>
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(8px);
-    z-index: 10000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
-  }
+      .small-btn {
+        padding: 10px 12px;
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.02);
+        color: var(--muted);
+        cursor: pointer;
+      }
 
-  .modal-overlay.active {
-    opacity: 1;
-    pointer-events: auto;
-  }
+      .result {
+        margin-top: 12px;
+        padding: 12px;
+        border-radius: 10px;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+        color: var(--fg);
+      }
 
-  .modal-content {
-    background: #0f1724;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    width: 400px;
-    max-width: 90%;
-    border-radius: 16px;
-    padding: 24px;
-    text-align: center;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-    transform: scale(0.9);
-    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  }
+      .panel {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid rgba(255, 255, 255, 0.02);
+        padding: 12px;
+        border-radius: 10px;
+        color: var(--muted);
+        margin-bottom: 12px;
+      }
 
-  .modal-overlay.active .modal-content {
-    transform: scale(1);
-  }
+      .panel h4 {
+        margin: 0 0 8px 0;
+        color: var(--fg);
+        font-size: 14px;
+      }
 
-  .modal-title {
-    font-size: 18px;
-    font-weight: 700;
-    color: #fff;
-    margin-bottom: 16px;
-  }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 8px;
+      }
 
-  .modal-logs {
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 12px;
-    max-height: 240px;
-    overflow-y: auto;
-    text-align: left;
-    margin-bottom: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-  }
+      .model-status {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 6px;
+      }
 
-  .modal-log-item {
-    padding: 10px 14px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    font-size: 14px;
-    display: flex;
-    justify-content: space-between;
-    color: #cbd5e1;
-  }
+      #bboxCanvas {
+        position: absolute;
+        left: 8px;
+        top: 8px;
+        width: calc(100% - 16px);
+        height: calc(100% - 16px);
+        pointer-events: none;
+      }
 
-  .modal-log-item:last-child {
-    border-bottom: none;
-  }
+      .hidden {
+        display: none !important;
+      }
 
-  .modal-log-item span.in {
-    color: #4ade80;
-    font-weight: 600;
-  }
+      .muted {
+        color: var(--muted);
+        font-size: 13px;
+      }
 
-  .modal-log-item span.out {
-    color: #f87171;
-    font-weight: 600;
-  }
+      @media (max-width:900px) {
+        .viewport {
+          width: 96%;
+        }
 
-  .modal-btn {
-    background: #fff;
-    color: #0f1724;
-    border: none;
-    padding: 12px 32px;
-    font-size: 16px;
-    font-weight: 600;
-    border-radius: 12px;
-    cursor: pointer;
-    transition: opacity 0.2s;
-    width: 100%;
-  }
+        .layout {
+          grid-template-columns: 1fr;
+        }
 
-  .modal-btn:hover {
-    opacity: 0.9;
-  }
-</style>
+        .camera {
+          height: 260px;
+        }
+      }
 
-<div id="notify3d" class="hidden"></div>
+      .in-btn {
+        padding: 12px 18px;
+        border-radius: 10px;
+        border: none;
+        font-weight: 700;
+        font-size: 15px;
+        color: #fff;
+        cursor: pointer;
+        background: linear-gradient(90deg, var(--button-a), var(--button-b));
+        box-shadow: 0 10px 25px rgba(34, 197, 94, 0.35);
+      }
 
-<!-- Daily Logs Modal HTML -->
-<div id="dailyLogsModal" class="modal-overlay">
-  <div class="modal-content">
-    <div class="modal-title">Daily Check-ins</div>
-    <div id="modalLogsList" class="modal-logs"></div>
-    <button id="modalOkBtn" class="modal-btn">OK</button>
-  </div>
-</div>
+      .out-btn {
+        padding: 12px 18px;
+        border-radius: 10px;
+        border: none;
+        font-weight: 700;
+        font-size: 15px;
+        color: #fff;
+        cursor: pointer;
+        background: linear-gradient(90deg, var(--button-a), var(--button-b));
+        box-shadow: 0 10px 25px rgba(239, 68, 68, 0.35);
+      }
 
-<div class="page">
-  <div class="viewport">
-    <div class="outer">
-      <div class="card" id="kioskCard" role="main" aria-label="Aurora Motion Kiosk">
+      /* 3D notify */
+      .notify3d {
+        position: fixed;
+        top: 28px;
+        left: 50%;
+        transform: translateX(-50%) scale(.8);
+        min-width: 300px;
+        padding: 18px 28px;
+        border-radius: 16px;
+        font-weight: 700;
+        text-align: center;
+        font-size: 17px;
+        z-index: 9999;
+        color: #fff;
+        box-shadow: 0 25px 70px rgba(0, 0, 0, .5);
+        animation: pop3d .35s ease forwards;
+        opacity: 0;
+        pointer-events: none;
+      }
 
-        <div class="header">
-          <div>
-            <div class="title">Aurora Motion Kiosk</div>
-            <div class="subtitle">Animated waves · Face detection · Live customizer</div>
-          </div>
-          <div style="min-width:44px; text-align:right;">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
-              <defs>
-                <linearGradient id="g1" x1="0" x2="1">
-                  <stop offset="0" stop-color="#7c3aed" />
-                  <stop offset="1" stop-color="#06b6d4" />
-                </linearGradient>
-              </defs>
-              <circle cx="12" cy="12" r="10" fill="url(#g1)" opacity="0.16" />
-            </svg>
-          </div>
-        </div>
+      .notify3d.in {
+        background: linear-gradient(135deg, #16a34a, #22c55e);
+      }
 
-        <div class="layout">
-          <!-- LEFT: Camera + Controls -->
-          <div class="left">
-            <div class="field">
-              <label class="label">Employee ID</label>
-              <input id="employee_id" class="input" type="text" value="" autocomplete="off" readonly />
-            </div>
-            <div class="camera" aria-live="polite">
-              <div class="camera-inner">
+      .notify3d.out {
+        background: linear-gradient(135deg, #dc2626, #ef4444);
+      }
 
-                <div id="face-guide"></div>
+      .notify3d.error {
+        background: linear-gradient(135deg, #7f1d1d, #b91c1c);
+      }
 
-                <div id="cameraBg" class="camera-bg"
-                  style="background-image:url('/files/0c261b40-99c5-4c9d-9a56-a9a8707f309e_image.png');">
-                </div>
+      @keyframes pop3d {
+        0% {
+          transform: translateX(-50%) scale(.6);
+          opacity: .0
+        }
 
-                <video id="camera" autoplay playsinline muted></video>
+        100% {
+          transform: translateX(-50%) scale(1);
+          opacity: 1
+        }
+      }
 
-                <div id="camera-hint">🎥 Align your face inside the box</div>
+      /* history panel */
+      .history {
+        margin-top: 12px;
+        background: rgba(255, 255, 255, 0.02);
+        padding: 10px;
+        border-radius: 10px;
+        max-height: 220px;
+        overflow: auto;
+      }
 
-                <div class="ribbon"></div>
-                <div class="glow"></div>
-                <canvas id="bboxCanvas"></canvas>
+      .history .row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+      }
 
+      .history .row:last-child {
+        border-bottom: none;
+      }
+
+      /* Holiday styles */
+      .holiday-item {
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        font-size: 14px;
+      }
+
+      .holiday-item:last-child {
+        border-bottom: none;
+      }
+
+      .holiday-range {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+
+      /* 🔒 Hide all right panels by default */
+      .right .panel {
+        display: none !important;
+      }
+
+      /* ✅ Show ONLY Holidays panel */
+      .right .holidays-panel {
+        display: block !important;
+      }
+    </style>
+
+    <!-- Daily Logs Modal CSS -->
+    <style>
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(8px);
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+      }
+
+      .modal-overlay.active {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .modal-content {
+        background: #0f1724;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        width: 400px;
+        max-width: 90%;
+        border-radius: 16px;
+        padding: 24px;
+        text-align: center;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        transform: scale(0.9);
+        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .modal-overlay.active .modal-content {
+        transform: scale(1);
+      }
+
+      .modal-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: #fff;
+        margin-bottom: 16px;
+      }
+
+      .modal-logs {
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 12px;
+        max-height: 240px;
+        overflow-y: auto;
+        text-align: left;
+        margin-bottom: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .modal-log-item {
+        padding: 10px 14px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        font-size: 14px;
+        display: flex;
+        justify-content: space-between;
+        color: #cbd5e1;
+      }
+
+      .modal-log-item:last-child {
+        border-bottom: none;
+      }
+
+      .modal-log-item span.in {
+        color: #4ade80;
+        font-weight: 600;
+      }
+
+      .modal-log-item span.out {
+        color: #f87171;
+        font-weight: 600;
+      }
+
+      .modal-btn {
+        background: #fff;
+        color: #0f1724;
+        border: none;
+        padding: 12px 32px;
+        font-size: 16px;
+        font-weight: 600;
+        border-radius: 12px;
+        cursor: pointer;
+        transition: opacity 0.2s;
+        width: 100%;
+      }
+
+      .modal-btn:hover {
+        opacity: 0.9;
+      }
+    </style>
+
+    <div id="notify3d" class="hidden"></div>
+
+    <!-- Daily Logs Modal HTML -->
+    <div id="dailyLogsModal" class="modal-overlay">
+      <div class="modal-content">
+        <div class="modal-title">Daily Check-ins</div>
+        <div id="modalLogsList" class="modal-logs"></div>
+        <button id="modalOkBtn" class="modal-btn">OK</button>
+      </div>
+    </div>
+
+    <div class="page">
+      <div class="viewport">
+        <div class="outer">
+          <div class="card" id="kioskCard" role="main" aria-label="Aurora Motion Kiosk">
+
+            <div class="header">
+              <div>
+                <div class="title">Aurora Motion Kiosk</div>
+                <div class="subtitle">Animated waves · Face detection · Live customizer</div>
               </div>
+              <div style="min-width:44px; text-align:right;">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+                  <defs>
+                    <linearGradient id="g1" x1="0" x2="1">
+                      <stop offset="0" stop-color="#7c3aed" />
+                      <stop offset="1" stop-color="#06b6d4" />
+                    </linearGradient>
+                  </defs>
+                  <circle cx="12" cy="12" r="10" fill="url(#g1)" opacity="0.16" />
+                </svg>
+              </div>
+            </div>
 
-              <div id="inoutBadge" class="badge hidden">IN</div>
+            <div class="layout">
+              <!-- LEFT: Camera + Controls -->
+              <div class="left">
+                <div class="field">
+                  <label class="label">Employee ID</label>
+                  <input id="employee_id" class="input" type="text" value="" autocomplete="off" readonly />
+                </div>
+                <div class="camera" aria-live="polite">
+                  <div class="camera-inner">
 
-              <div style="
+                    <div id="face-guide"></div>
+
+                    <div id="cameraBg" class="camera-bg"
+                      style="background-image:url('/files/0c261b40-99c5-4c9d-9a56-a9a8707f309e_image.png');">
+                    </div>
+
+                    <video id="camera" autoplay playsinline muted></video>
+
+                    <div id="camera-hint">🎥 Align your face inside the box</div>
+
+                    <div class="ribbon"></div>
+                    <div class="glow"></div>
+                    <canvas id="bboxCanvas"></canvas>
+
+                  </div>
+
+                  <div id="inoutBadge" class="badge hidden">IN</div>
+
+                  <div style="
                 position:absolute;
                 right:12px;
                 bottom:12px;
@@ -665,452 +692,487 @@
                 background: rgba(0,0,0,0.18);
                 padding:6px 8px;
                 border-radius:8px;">
-                Aurora
+                    Aurora
+                  </div>
+                </div>
+
+                <canvas id="capture_canvas" width="960" height="720" style="display:none;"></canvas>
+
+                <div class="controls">
+                  <button id="inout_btn" class="in-btn">✅ IN</button>
+                  <button id="capture_btn" class="capture-btn">📸 Capture & Mark</button>
+                  <button id="preview_toggle" class="small-btn">Preview</button>
+                </div>
+
+                <img id="imgPreview" class="img-preview hidden"
+                  style="max-width:100%; margin-top:10px; border-radius:8px;" />
+
+                <div id="resultBox" class="result hidden">
+                  <div id="resultLeft"></div>
+                  <div id="resultRight"></div>
+                </div>
+
+                <div id="debug" class="debug hidden" style="margin-top:8px; font-size:12px;"></div>
+
+
+
               </div>
-            </div>
 
-            <canvas id="capture_canvas" width="960" height="720" style="display:none;"></canvas>
+              <!-- RIGHT: Customizer + Status + Holidays -->
+              <div class="right">
 
-            <div class="controls">
-              <button id="inout_btn" class="in-btn">✅ IN</button>
-              <button id="capture_btn" class="capture-btn">📸 Capture & Mark</button>
-              <button id="preview_toggle" class="small-btn">Preview</button>
-            </div>
+                <!-- Holidays Panel -->
+                <div class="panel holidays-panel">
+                  <h4>Holidays</h4>
+                  <div class="holiday-range" id="holidayRange"></div>
+                  <div id="holidayBox">
+                    <p style="color: var(--muted); font-size: 14px;">Loading...</p>
+                  </div>
+                </div>
 
-            <img id="imgPreview" class="img-preview hidden"
-              style="max-width:100%; margin-top:10px; border-radius:8px;" />
+                <!-- Theme Customizer -->
+                <div class="panel">
+                  <h4>Theme Color Customizer</h4>
+                  <div class="row">
+                    <label class="muted" style="min-width:80px;">Aurora A</label>
+                    <input id="colorA" type="color" value="#7c3aed">
+                    <input id="colorB" type="color" value="#06b6d4" style="margin-left:8px;">
+                  </div>
 
-            <div id="resultBox" class="result hidden">
-              <div id="resultLeft"></div>
-              <div id="resultRight"></div>
-            </div>
+                  <div class="row">
+                    <label class="muted" style="min-width:80px;">Button</label>
+                    <input id="btnA" type="color" value="#7c3aed">
+                    <input id="btnB" type="color" value="#06b6d4" style="margin-left:8px;">
+                  </div>
 
-            <div id="debug" class="debug hidden" style="margin-top:8px; font-size:12px;"></div>
+                  <div class="row" style="margin-top:10px;">
+                    <button id="resetTheme" class="small-btn">Reset Theme</button>
+                    <div style="flex:1"></div>
+                    <div id="themeSaved" class="muted" style="font-size:13px; display:none;">Saved</div>
+                  </div>
+                </div>
 
+                <!-- Features -->
+                <div class="panel">
+                  <h4>Features</h4>
+                  <div class="row">
+                    <label class="muted" style="min-width:110px;">Sound</label>
+                    <input id="feature_sound" type="checkbox" checked>
+                  </div>
+                  <div class="row">
+                    <label class="muted" style="min-width:110px;">Vibration</label>
+                    <input id="feature_vibrate" type="checkbox" checked>
+                  </div>
+                  <div class="row">
+                    <label class="muted" style="min-width:110px;">Show Face %</label>
+                    <input id="feature_facepct" type="checkbox" checked>
+                  </div>
+                  <div class="row">
+                    <label class="muted" style="min-width:110px;">Auto Capture</label>
+                    <input id="feature_autocapture" type="checkbox" checked>
+                  </div>
+                  <div class="row">
+                    <label class="muted" style="min-width:110px;">Colour Mode</label>
+                    <input id="feature_colormode" type="checkbox">
+                  </div>
+                </div>
 
+                <!-- Face Detection Status -->
+                <div class="panel">
+                  <h4>Face Detection</h4>
+                  <div class="model-status" id="modelStatus">Loading models…</div>
+                  <div style="margin-top:8px;" class="muted">Note: models load from CDN. You can host locally for
+                    offline.
+                  </div>
+                </div>
+
+              </div>
+            </div> <!-- layout -->
 
           </div>
-
-          <!-- RIGHT: Customizer + Status + Holidays -->
-          <div class="right">
-
-            <!-- Holidays Panel -->
-            <div class="panel holidays-panel">
-              <h4>Holidays</h4>
-              <div class="holiday-range" id="holidayRange"></div>
-              <div id="holidayBox">
-                <p style="color: var(--muted); font-size: 14px;">Loading...</p>
-              </div>
-            </div>
-
-            <!-- Theme Customizer -->
-            <div class="panel">
-              <h4>Theme Color Customizer</h4>
-              <div class="row">
-                <label class="muted" style="min-width:80px;">Aurora A</label>
-                <input id="colorA" type="color" value="#7c3aed">
-                <input id="colorB" type="color" value="#06b6d4" style="margin-left:8px;">
-              </div>
-
-              <div class="row">
-                <label class="muted" style="min-width:80px;">Button</label>
-                <input id="btnA" type="color" value="#7c3aed">
-                <input id="btnB" type="color" value="#06b6d4" style="margin-left:8px;">
-              </div>
-
-              <div class="row" style="margin-top:10px;">
-                <button id="resetTheme" class="small-btn">Reset Theme</button>
-                <div style="flex:1"></div>
-                <div id="themeSaved" class="muted" style="font-size:13px; display:none;">Saved</div>
-              </div>
-            </div>
-
-            <!-- Features -->
-            <div class="panel">
-              <h4>Features</h4>
-              <div class="row">
-                <label class="muted" style="min-width:110px;">Sound</label>
-                <input id="feature_sound" type="checkbox" checked>
-              </div>
-              <div class="row">
-                <label class="muted" style="min-width:110px;">Vibration</label>
-                <input id="feature_vibrate" type="checkbox" checked>
-              </div>
-              <div class="row">
-                <label class="muted" style="min-width:110px;">Show Face %</label>
-                <input id="feature_facepct" type="checkbox" checked>
-              </div>
-              <div class="row">
-                <label class="muted" style="min-width:110px;">Auto Capture</label>
-                <input id="feature_autocapture" type="checkbox" checked>
-              </div>
-              <div class="row">
-                <label class="muted" style="min-width:110px;">Colour Mode</label>
-                <input id="feature_colormode" type="checkbox">
-              </div>
-            </div>
-
-            <!-- Face Detection Status -->
-            <div class="panel">
-              <h4>Face Detection</h4>
-              <div class="model-status" id="modelStatus">Loading models…</div>
-              <div style="margin-top:8px;" class="muted">Note: models load from CDN. You can host locally for offline.
-              </div>
-            </div>
-
-          </div>
-        </div> <!-- layout -->
-
+        </div>
       </div>
     </div>
-  </div>
-</div>
 
-<!-- face-api -->
-<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
+    <!-- face-api -->
+    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
 
-<script>
-  (async function () {
-    /* ---------- Elements ---------- */
-    const kioskCard = document.getElementById('kioskCard');
-    const camera = document.getElementById('camera');
-    const bboxCanvas = document.getElementById('bboxCanvas');
-    const bboxCtx = bboxCanvas.getContext('2d');
-    const canvas = document.getElementById('capture_canvas');
-    const ctx = canvas.getContext('2d');
-    const empInput = document.getElementById('employee_id');
-    const captureBtn = document.getElementById('capture_btn');
-    const previewBtn = document.getElementById('preview_toggle');
-    const imgPreview = document.getElementById('imgPreview');
-    const resultBox = document.getElementById('resultBox');
-    const resultLeft = document.getElementById('resultLeft');
-    const resultRight = document.getElementById('resultRight');
-    const debug = document.getElementById('debug');
-    const inoutBadge = document.getElementById('inoutBadge');
-    const cameraBg = document.getElementById('cameraBg');
-    const historyRows = document.getElementById('historyRows');
+    <script>
+      (async function () {
+        /* ---------- Elements ---------- */
+        const kioskCard = document.getElementById('kioskCard');
+        const camera = document.getElementById('camera');
+        const bboxCanvas = document.getElementById('bboxCanvas');
+        const bboxCtx = bboxCanvas.getContext('2d');
+        const canvas = document.getElementById('capture_canvas');
+        const ctx = canvas.getContext('2d');
+        const empInput = document.getElementById('employee_id');
+        const captureBtn = document.getElementById('capture_btn');
+        const previewBtn = document.getElementById('preview_toggle');
+        const imgPreview = document.getElementById('imgPreview');
+        const resultBox = document.getElementById('resultBox');
+        const resultLeft = document.getElementById('resultLeft');
+        const resultRight = document.getElementById('resultRight');
+        const debug = document.getElementById('debug');
+        const inoutBadge = document.getElementById('inoutBadge');
+        const cameraBg = document.getElementById('cameraBg');
+        const historyRows = document.getElementById('historyRows');
 
-    const feature_sound = document.getElementById('feature_sound');
-    const feature_vibrate = document.getElementById('feature_vibrate');
-    const feature_facepct = document.getElementById('feature_facepct');
-    const feature_autocapture = document.getElementById('feature_autocapture');
-    const feature_colormode = document.getElementById('feature_colormode');
+        const feature_sound = document.getElementById('feature_sound');
+        const feature_vibrate = document.getElementById('feature_vibrate');
+        const feature_facepct = document.getElementById('feature_facepct');
+        const feature_autocapture = document.getElementById('feature_autocapture');
+        const feature_colormode = document.getElementById('feature_colormode');
 
-    const colorA = document.getElementById('colorA');
-    const colorB = document.getElementById('colorB');
-    const btnA = document.getElementById('btnA');
-    const btnB = document.getElementById('btnB');
-    const resetTheme = document.getElementById('resetTheme');
-    const themeSaved = document.getElementById('themeSaved');
-    const modelStatus = document.getElementById('modelStatus');
+        const colorA = document.getElementById('colorA');
+        const colorB = document.getElementById('colorB');
+        const btnA = document.getElementById('btnA');
+        const btnB = document.getElementById('btnB');
+        const resetTheme = document.getElementById('resetTheme');
+        const themeSaved = document.getElementById('themeSaved');
+        const modelStatus = document.getElementById('modelStatus');
 
-    cameraBg.style.backgroundImage = "url('/files/0c261b40-99c5-4c9d-9a56-a9a8707f309e_image.png')";
+        cameraBg.style.backgroundImage = "url('/files/0c261b40-99c5-4c9d-9a56-a9a8707f309e_image.png')";
 
-    /* ---------- Backend Settings ---------- */
-    const kioskFlags = {
-      sound: false,
-      vibration: false,
-      showFacePercentage: false,
-      colourMode: false
-    };
-
-    async function loadKioskSettings() {
-      try {
-        const res = await fetch(
-          "/api/method/smart_attendance.smart_attendance.api.custom_page_handler.get_kiosk_settings"
-        );
-        const data = await res.json();
-        const s = data.message.settings;
-
-        // Apply theme colors from backend
-        document.documentElement.style.setProperty("--aurora-a", s.theme.aurora_a);
-        document.documentElement.style.setProperty("--aurora-b", s.theme.aurora_b);
-        document.documentElement.style.setProperty("--button-a", s.theme.button_a);
-        document.documentElement.style.setProperty("--button-b", s.theme.button_b);
-
-        // Update color pickers
-        colorA.value = s.theme.aurora_a;
-        colorB.value = s.theme.aurora_b;
-        btnA.value = s.theme.button_a;
-        btnB.value = s.theme.button_b;
-
-        // Apply feature flags
-        kioskFlags.sound = !!s.features.sound;
-        kioskFlags.vibration = !!s.features.vibration;
-        kioskFlags.showFacePercentage = !!s.features.show_face_percentage;
-        kioskFlags.colourMode = !!s.advanced.colour_mode;
-
-        // Update UI toggles
-        feature_sound.checked = kioskFlags.sound;
-        feature_vibrate.checked = kioskFlags.vibration;
-        feature_facepct.checked = kioskFlags.showFacePercentage;
-        feature_colormode.checked = kioskFlags.colourMode;
-
-        // Apply color mode
-        document.body.classList.toggle("light-mode", kioskFlags.colourMode);
-
-        // Apply theme
-        applyTheme(colorA.value, colorB.value, btnA.value, btnB.value);
-      } catch (e) {
-        console.error("Failed to load kiosk settings:", e);
-      }
-    }
-
-
-
-    // /* ---------- Theme ---------- */
-    function applyTheme(cA, cB, bA, bB) {
-      document.documentElement.style.setProperty('--aurora-a', cA);
-      document.documentElement.style.setProperty('--aurora-b', cB);
-      document.documentElement.style.setProperty('--button-a', bA);
-      document.documentElement.style.setProperty('--button-b', bB);
-      document.documentElement.style.setProperty('--accent-gradient', `linear-gradient(90deg, ${bA}, ${bB})`);
-
-      // Update capture button background
-      document.querySelectorAll('.capture-btn').forEach(el => el.style.background = `linear-gradient(90deg, ${bA}, ${bB})`);
-
-      // Update IN/OUT button backgrounds
-      document.querySelectorAll('.in-btn, .out-btn').forEach(el => el.style.background = `linear-gradient(90deg, ${bA}, ${bB})`);
-    }
-
-
-    /* ---------- Color Mode Toggle ---------- */
-    feature_colormode.addEventListener('change', function () {
-      kioskFlags.colourMode = this.checked;
-      document.body.classList.toggle("light-mode", kioskFlags.colourMode);
-    });
-
-    /* ---------- Audio ---------- */
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    const audioCtx = AudioCtx ? new AudioCtx() : null;
-    function playTone(freq, dur = 120, type = 'sine', gain = 0.12) { if (!audioCtx) return; const o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.type = type; o.frequency.value = freq; g.gain.value = 0; o.connect(g); g.connect(audioCtx.destination); const now = audioCtx.currentTime; g.gain.linearRampToValueAtTime(gain, now + 0.01); o.start(now); g.gain.exponentialRampToValueAtTime(0.0001, now + dur / 1000); o.stop(now + dur / 1000 + 0.02); }
-    function playSuccessTone(profile) { if (!audioCtx || !feature_sound.checked) return; if (profile === 'soft') { playTone(880, 140, 'sine', 0.12); setTimeout(() => playTone(1320, 110, 'sine', 0.08), 140); } else if (profile === 'arcade') { playTone(1040, 80, 'square', 0.14); setTimeout(() => playTone(760, 90, 'square', 0.12), 90); } else playTone(900, 90, 'sine', 0.12); }
-    function playFailTone(profile) { if (!audioCtx || !feature_sound.checked) return; if (profile === 'soft') { playTone(300, 220, 'sawtooth', 0.16); setTimeout(() => playTone(220, 130, 'sawtooth', 0.12), 160); } else if (profile === 'arcade') { playTone(220, 200, 'sawtooth', 0.18); setTimeout(() => playTone(160, 160, 'sawtooth', 0.12), 140); } else playTone(220, 180, 'sine', 0.14); }
-
-    /* ---------- Vibration & TTS ---------- */
-    function doVibrate(ok = true) { if (!feature_vibrate.checked) return; if (!('vibrate' in navigator)) return; if (ok) navigator.vibrate([30, 60]); else navigator.vibrate([160, 80, 60]); }
-    function speak(text) { try { if (!('speechSynthesis' in window)) return; const u = new SpeechSynthesisUtterance(text); u.lang = 'en-IN'; speechSynthesis.speak(u); } catch (e) { console.warn(e); } }
-
-    /* ---------- 3D notify ---------- */
-    function show3DNotify(type, text) {
-      const box = document.getElementById('notify3d');
-      box.className = `notify3d ${type}`;
-      box.innerHTML = text;
-      box.style.opacity = '1';
-      box.classList.remove('hidden');
-      if (type === 'in') { playSuccessTone('soft'); doVibrate(true); }
-      else if (type === 'out') { playSuccessTone('arcade'); doVibrate(true); }
-      else if (type === 'error') { playFailTone('soft'); doVibrate(false); }
-      setTimeout(() => { box.classList.add('hidden'); box.style.opacity = '0'; }, 2600);
-    }
-
-    /* ---------- Card tilt ---------- */
-    function onMove(e) { const bounds = kioskCard.getBoundingClientRect(); const x = (e.clientX - bounds.left) / bounds.width - 0.5; const y = (e.clientY - bounds.top) / bounds.height - 0.5; const rotX = (-y) * 6; const rotY = (x) * 10; kioskCard.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg) translateZ(6px)`; }
-    function onLeave() { kioskCard.style.transform = `rotateX(0deg) rotateY(0deg) translateZ(0)`; }
-    window.addEventListener('mousemove', onMove); kioskCard.addEventListener('mouseleave', onLeave);
-
-    /* ---------- Camera ---------- */
-    async function startCamera() { try { const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false }); camera.srcObject = stream; await camera.play(); resizeOverlay(); logDebug('Camera started'); } catch (e) { show3DNotify('error', 'Camera error'); logDebug('Camera error: ' + (e.message || e)); } }
-    startCamera();
-    function resizeOverlay() { const rect = camera.getBoundingClientRect(); bboxCanvas.width = rect.width * devicePixelRatio; bboxCanvas.height = rect.height * devicePixelRatio; bboxCanvas.style.width = rect.width + 'px'; bboxCanvas.style.height = rect.height + 'px'; bboxCtx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0); }
-    window.addEventListener('resize', resizeOverlay);
-
-    /* ---------- face-api models ---------- */
-    /* ---------- face-api models ---------- */
-    const modelUrl = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
-    modelStatus.innerText = 'Loading models (CDN)…';
-
-    let detectOptions;
-
-    try {
-      if (typeof faceapi === 'undefined') {
-        throw new Error("face-api library not loaded from CDN");
-      }
-
-      await faceapi.nets.tinyFaceDetector.loadFromUri(modelUrl);
-      await faceapi.nets.faceLandmark68Net.loadFromUri(modelUrl);
-      modelStatus.innerText = 'Models loaded';
-      logDebug('face-api loaded');
-
-      detectOptions = new faceapi.TinyFaceDetectorOptions({
-        inputSize: 256,
-        scoreThreshold: 0.5
-      });
-
-    } catch (e) {
-      console.error("Critical Kiosk Error:", e);
-      modelStatus.innerText = 'Error: AI Models Failed';
-      show3DNotify('error', 'AI Model Error');
-      // Stop execution of further logic that depends on faceapi
-      return;
-    }
-
-    // ---------- AI helpers ----------
-    let stableSince = null;
-    let detecting = true;
-
-    async function detectionLoop() {
-      if (!detecting || camera.readyState < 2) {
-        requestAnimationFrame(detectionLoop);
-        return;
-      }
-
-      try {
-        const dets = await faceapi
-          .detectAllFaces(camera, detectOptions)
-          .withFaceLandmarks();
-
-        drawDetections(dets);
-
-        const hint = document.getElementById("camera-hint");
-
-        if (!dets || dets.length === 0) {
-          hint.style.display = "block";
-          stableSince = null;
-          requestAnimationFrame(detectionLoop);
-          return;
+        /* ---------- FETCH WRAPPER (REPLACES frappe.call) ---------- */
+        async function callURL(method, args = {}) {
+           // Build query params
+           const params = new URLSearchParams();
+           for (const [key, value] of Object.entries(args)) {
+               params.append(key, value);
+           }
+           
+           try {
+               const res = await fetch(`/api/method/${method}?${params.toString()}`, {
+                   method: 'GET', // or POST if needed, but GET is simpler for reads
+                   headers: {
+                       'Accept': 'application/json',
+                       'X-Frappe-CSRF-Token': frappe.csrf_token || ''
+                   }
+               });
+               const data = await res.json();
+               return data;
+           } catch(e) {
+               console.error("API Call Error", e);
+               return { message: null };
+           }
+        }
+        
+        // POST version for writes
+        async function callPost(method, args = {}) {
+           const formData = new FormData();
+           for (const [key, value] of Object.entries(args)) {
+               formData.append(key, value);
+           }
+           
+           try {
+               const res = await fetch(`/api/method/${method}`, {
+                   method: 'POST',
+                   headers: {
+                       'X-Frappe-CSRF-Token': frappe.csrf_token || ''
+                   },
+                   body: formData
+               });
+               const data = await res.json();
+               return data;
+           } catch(e) {
+               console.error("API Post Error", e);
+               return { message: null };
+           }
         }
 
-        // ❌ Multiple faces
-        if (dets.length > 1) {
-          hint.style.display = "block";
-          stableSince = null;
-          show3DNotify('error', '❌ Multiple faces detected');
-          requestAnimationFrame(detectionLoop);
-          return;
-        }
+        /* ---------- Backend Settings ---------- */
+        const kioskFlags = {
+          sound: false,
+          vibration: false,
+          showFacePercentage: false,
+          colourMode: false
+        };
 
-        // ✅ Single face
-        hint.style.display = "block";
-        hint.innerText = "Face Detected";
+        async function loadKioskSettings() {
+          try {
+            const data = await callURL("smart_attendance.smart_attendance.api.custom_page_handler.get_kiosk_settings");
+            if (!data.message) return;
+            const s = data.message.settings;
 
-        // 🧠 Direct Auto Capture (No Liveness)
-        if (feature_autocapture.checked) {
-          handleAutoCapture(dets[0]);
-        }
+            // Apply theme colors from backend
+            document.documentElement.style.setProperty("--aurora-a", s.theme.aurora_a);
+            document.documentElement.style.setProperty("--aurora-b", s.theme.aurora_b);
+            document.documentElement.style.setProperty("--button-a", s.theme.button_a);
+            document.documentElement.style.setProperty("--button-b", s.theme.button_b);
 
+            // Update color pickers
+            colorA.value = s.theme.aurora_a;
+            colorB.value = s.theme.aurora_b;
+            btnA.value = s.theme.button_a;
+            btnB.value = s.theme.button_b;
 
-      } catch (e) {
-        console.warn('detect error', e);
-      }
+            // Apply feature flags
+            kioskFlags.sound = !!s.features.sound;
+            kioskFlags.vibration = !!s.features.vibration;
+            kioskFlags.showFacePercentage = !!s.features.show_face_percentage;
+            kioskFlags.colourMode = !!s.advanced.colour_mode;
 
-      requestAnimationFrame(detectionLoop);
-    } // End detectionLoop
+            // Update UI toggles
+            feature_sound.checked = kioskFlags.sound;
+            feature_vibrate.checked = kioskFlags.vibration;
+            feature_facepct.checked = kioskFlags.showFacePercentage;
+            feature_colormode.checked = kioskFlags.colourMode;
 
+            // Apply color mode
+            document.body.classList.toggle("light-mode", kioskFlags.colourMode);
 
-    /* -----------------------------------------------------------
-     *  Liveness Logic Removed
-     * ----------------------------------------------------------- */
-
-
-
-
-    detectionLoop();
-
-
-
-    function clearBoxes() { bboxCtx.clearRect(0, 0, bboxCanvas.width, bboxCanvas.height); }
-    function drawDetections(dets) {
-      clearBoxes();
-      if (!dets || dets.length === 0) return;
-      const displaySize = { width: camera.clientWidth, height: camera.clientHeight };
-      const scaleX = displaySize.width / (camera.videoWidth || displaySize.width);
-      const scaleY = displaySize.height / (camera.videoHeight || displaySize.height);
-      bboxCtx.lineWidth = 3;
-      dets.forEach(d => {
-        const box = d.detection.box;
-        const x = box.x * scaleX;
-        const y = box.y * scaleY;
-        const w = box.width * scaleX;
-        const h = box.height * scaleY;
-        bboxCtx.strokeStyle = 'rgba(0,255,150,0.9)';
-        bboxCtx.fillStyle = 'rgba(0,255,150,0.08)';
-        roundRect(bboxCtx, x, y, w, h, 8);
-        const score = Math.round(d.detection.score * 100) / 100;
-        bboxCtx.font = '14px Inter, Arial';
-        bboxCtx.fillStyle = 'rgba(0,0,0,0.7)';
-        bboxCtx.fillRect(x, y - 22, 110, 20);
-        bboxCtx.fillStyle = 'rgba(255,255,255,0.95)';
-        const txt = feature_facepct.checked ? `face ${score}` : `face`;
-        bboxCtx.fillText(txt, x + 6, y - 7);
-      });
-    }
-    function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); ctx.fill(); ctx.stroke(); }
-
-    /* ---------- Helpers ---------- */
-    function logDebug(msg) { debug.classList.remove('hidden'); debug.innerText = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2); console.log('[KIOSK]', msg); }
-    function startLoading() { /* placeholder */ }
-    function stopLoading() { /* placeholder */ }
-
-
-
-    /* =========================================================
-       Employee Exists (frappe.db.exists via backend)
-      /* =========================================================
-       Employee Exists (FIXED)
-       ========================================================= */
-    async function employeeExists(employee_id) {
-      if (!employee_id) return false;
-
-      return new Promise(resolve => {
-        frappe.call({
-          method: "smart_attendance.smart_attendance.api.custom_checkin_employee_id.check_employee_exists",
-          args: { employee_id },
-          callback: function (r) {
-            resolve(r?.message === true);
-          },
-          error: function () {
-            resolve(false);
+            // Apply theme
+            applyTheme(colorA.value, colorB.value, btnA.value, btnB.value);
+          } catch (e) {
+            console.error("Failed to load kiosk settings:", e);
           }
+        }
+
+
+
+        // /* ---------- Theme ---------- */
+        function applyTheme(cA, cB, bA, bB) {
+          document.documentElement.style.setProperty('--aurora-a', cA);
+          document.documentElement.style.setProperty('--aurora-b', cB);
+          document.documentElement.style.setProperty('--button-a', bA);
+          document.documentElement.style.setProperty('--button-b', bB);
+          document.documentElement.style.setProperty('--accent-gradient', `linear-gradient(90deg, ${bA}, ${bB})`);
+
+          // Update capture button background
+          document.querySelectorAll('.capture-btn').forEach(el => el.style.background = `linear-gradient(90deg, ${bA}, ${bB})`);
+
+          // Update IN/OUT button backgrounds
+          document.querySelectorAll('.in-btn, .out-btn').forEach(el => el.style.background = `linear-gradient(90deg, ${bA}, ${bB})`);
+        }
+
+
+        /* ---------- Color Mode Toggle ---------- */
+        feature_colormode.addEventListener('change', function () {
+          kioskFlags.colourMode = this.checked;
+          document.body.classList.toggle("light-mode", kioskFlags.colourMode);
         });
-      });
-    }
 
+        /* ---------- Audio ---------- */
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const audioCtx = AudioCtx ? new AudioCtx() : null;
+        function playTone(freq, dur = 120, type = 'sine', gain = 0.12) { if (!audioCtx) return; const o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.type = type; o.frequency.value = freq; g.gain.value = 0; o.connect(g); g.connect(audioCtx.destination); const now = audioCtx.currentTime; g.gain.linearRampToValueAtTime(gain, now + 0.01); o.start(now); g.gain.exponentialRampToValueAtTime(0.0001, now + dur / 1000); o.stop(now + dur / 1000 + 0.02); }
+        function playSuccessTone(profile) { if (!audioCtx || !feature_sound.checked) return; if (profile === 'soft') { playTone(880, 140, 'sine', 0.12); setTimeout(() => playTone(1320, 110, 'sine', 0.08), 140); } else if (profile === 'arcade') { playTone(1040, 80, 'square', 0.14); setTimeout(() => playTone(760, 90, 'square', 0.12), 90); } else playTone(900, 90, 'sine', 0.12); }
+        function playFailTone(profile) { if (!audioCtx || !feature_sound.checked) return; if (profile === 'soft') { playTone(300, 220, 'sawtooth', 0.16); setTimeout(() => playTone(220, 130, 'sawtooth', 0.12), 160); } else if (profile === 'arcade') { playTone(220, 200, 'sawtooth', 0.18); setTimeout(() => playTone(160, 160, 'sawtooth', 0.12), 140); } else playTone(220, 180, 'sine', 0.14); }
 
+        /* ---------- Vibration & TTS ---------- */
+        function doVibrate(ok = true) { if (!feature_vibrate.checked) return; if (!('vibrate' in navigator)) return; if (ok) navigator.vibrate([30, 60]); else navigator.vibrate([160, 80, 60]); }
+        function speak(text) { try { if (!('speechSynthesis' in window)) return; const u = new SpeechSynthesisUtterance(text); u.lang = 'en-IN'; speechSynthesis.speak(u); } catch (e) { console.warn(e); } }
 
-    /* ================= DAILY LOGS POPUP LOGIC ================= */
-    async function fetchAndShowDailyLogs(employee_id) {
-      detecting = false; // Pause detection
+        /* ---------- 3D notify ---------- */
+        function show3DNotify(type, text) {
+          const box = document.getElementById('notify3d');
+          box.className = `notify3d ${type}`;
+          box.innerHTML = text;
+          box.style.opacity = '1';
+          box.classList.remove('hidden');
+          if (type === 'in') { playSuccessTone('soft'); doVibrate(true); }
+          else if (type === 'out') { playSuccessTone('arcade'); doVibrate(true); }
+          else if (type === 'error') { playFailTone('soft'); doVibrate(false); }
+          setTimeout(() => { box.classList.add('hidden'); box.style.opacity = '0'; }, 2600);
+        }
 
-      // Update Title
-      document.querySelector('#dailyLogsModal .modal-title').innerText = `Daily Logs: ${employee_id}`;
+        /* ---------- Card tilt ---------- */
+        function onMove(e) { const bounds = kioskCard.getBoundingClientRect(); const x = (e.clientX - bounds.left) / bounds.width - 0.5; const y = (e.clientY - bounds.top) / bounds.height - 0.5; const rotX = (-y) * 6; const rotY = (x) * 10; kioskCard.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg) translateZ(6px)`; }
+        function onLeave() { kioskCard.style.transform = `rotateX(0deg) rotateY(0deg) translateZ(0)`; }
+        window.addEventListener('mousemove', onMove); kioskCard.addEventListener('mouseleave', onLeave);
 
-      // Fetch logs
-      try {
-        const logs = await new Promise((resolve, reject) => {
-          frappe.call({
-            method: "frappe.client.get_list",
-            args: {
-              doctype: "Employee Checkin",
-              filters: [
-                ["employee", "=", employee_id],
-                ["time", ">=", frappe.datetime.get_today() + " 00:00:00"],
-                ["time", "<=", frappe.datetime.get_today() + " 23:59:59"]
-              ],
-              fields: ["name", "log_type", "time", "employee_name"],
-              order_by: "time desc",
-              limit_page_length: 100
-            },
-            callback: (r) => resolve(r.message || [])
+        /* ---------- Camera ---------- */
+        async function startCamera() { try { const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false }); camera.srcObject = stream; await camera.play(); resizeOverlay(); logDebug('Camera started'); } catch (e) { show3DNotify('error', 'Camera error'); logDebug('Camera error: ' + (e.message || e)); } }
+        startCamera();
+        function resizeOverlay() { const rect = camera.getBoundingClientRect(); bboxCanvas.width = rect.width * devicePixelRatio; bboxCanvas.height = rect.height * devicePixelRatio; bboxCanvas.style.width = rect.width + 'px'; bboxCanvas.style.height = rect.height + 'px'; bboxCtx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0); }
+        window.addEventListener('resize', resizeOverlay);
+
+        /* ---------- face-api models ---------- */
+        /* ---------- face-api models ---------- */
+        const modelUrl = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+        modelStatus.innerText = 'Loading models (CDN)…';
+
+        let detectOptions;
+
+        try {
+          if (typeof faceapi === 'undefined') {
+            throw new Error("face-api library not loaded from CDN");
+          }
+
+          await faceapi.nets.tinyFaceDetector.loadFromUri(modelUrl);
+          await faceapi.nets.faceLandmark68Net.loadFromUri(modelUrl);
+          modelStatus.innerText = 'Models loaded';
+          logDebug('face-api loaded');
+
+          detectOptions = new faceapi.TinyFaceDetectorOptions({
+            inputSize: 256,
+            scoreThreshold: 0.5
           });
-        });
 
-        const list = document.getElementById('modalLogsList');
-        list.innerHTML = '';
+        } catch (e) {
+          console.error("Critical Kiosk Error:", e);
+          modelStatus.innerText = 'Error: AI Models Failed';
+          show3DNotify('error', 'AI Model Error');
+          // Stop execution of further logic that depends on faceapi
+          return;
+        }
 
-        if (logs.length === 0) {
-          list.innerHTML = '<div style="padding:14px; text-align:center; color:#64748b;">No logs found today</div>';
-          document.querySelector('#dailyLogsModal .modal-title').innerText = `Daily Logs (0)`;
-        } else {
-          // Update title with Name and Count
-          const count = logs.length;
-          const name = logs[0].employee_name || employee_id;
-          document.querySelector('#dailyLogsModal .modal-title').innerText = `Daily Logs (${count}): ${name}`;
+        // ---------- AI helpers ----------
+        let stableSince = null;
+        let detecting = true;
 
-          logs.forEach(l => {
-            const time = l.time.split(' ')[1].substring(0, 5); // HH:mm
-            const typeClass = l.log_type === 'IN' ? 'in' : 'out';
-            list.innerHTML += `
+        async function detectionLoop() {
+          if (!detecting || camera.readyState < 2) {
+            requestAnimationFrame(detectionLoop);
+            return;
+          }
+
+          try {
+            const dets = await faceapi
+              .detectAllFaces(camera, detectOptions)
+              .withFaceLandmarks();
+
+            drawDetections(dets);
+
+            const hint = document.getElementById("camera-hint");
+
+            if (!dets || dets.length === 0) {
+              hint.style.display = "block";
+              stableSince = null;
+              requestAnimationFrame(detectionLoop);
+              return;
+            }
+
+            // ❌ Multiple faces
+            if (dets.length > 1) {
+              hint.style.display = "block";
+              stableSince = null;
+              show3DNotify('error', '❌ Multiple faces detected');
+              requestAnimationFrame(detectionLoop);
+              return;
+            }
+
+            // ✅ Single face
+            hint.style.display = "block";
+            hint.innerText = "Face Detected";
+
+            // 🧠 Direct Auto Capture (No Liveness)
+            if (feature_autocapture.checked) {
+              handleAutoCapture(dets[0]);
+            }
+
+
+          } catch (e) {
+            console.warn('detect error', e);
+          }
+
+          requestAnimationFrame(detectionLoop);
+        } // End detectionLoop
+
+
+        /* -----------------------------------------------------------
+         *  Liveness Logic Removed
+         * ----------------------------------------------------------- */
+
+
+
+
+        detectionLoop();
+
+
+
+        function clearBoxes() { bboxCtx.clearRect(0, 0, bboxCanvas.width, bboxCanvas.height); }
+        function drawDetections(dets) {
+          clearBoxes();
+          if (!dets || dets.length === 0) return;
+          const displaySize = { width: camera.clientWidth, height: camera.clientHeight };
+          const scaleX = displaySize.width / (camera.videoWidth || displaySize.width);
+          const scaleY = displaySize.height / (camera.videoHeight || displaySize.height);
+          bboxCtx.lineWidth = 3;
+          dets.forEach(d => {
+            const box = d.detection.box;
+            const x = box.x * scaleX;
+            const y = box.y * scaleY;
+            const w = box.width * scaleX;
+            const h = box.height * scaleY;
+            bboxCtx.strokeStyle = 'rgba(0,255,150,0.9)';
+            bboxCtx.fillStyle = 'rgba(0,255,150,0.08)';
+            roundRect(bboxCtx, x, y, w, h, 8);
+            const score = Math.round(d.detection.score * 100) / 100;
+            bboxCtx.font = '14px Inter, Arial';
+            bboxCtx.fillStyle = 'rgba(0,0,0,0.7)';
+            bboxCtx.fillRect(x, y - 22, 110, 20);
+            bboxCtx.fillStyle = 'rgba(255,255,255,0.95)';
+            const txt = feature_facepct.checked ? `face ${score}` : `face`;
+            bboxCtx.fillText(txt, x + 6, y - 7);
+          });
+        }
+        function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+
+        /* ---------- Helpers ---------- */
+        function logDebug(msg) { debug.classList.remove('hidden'); debug.innerText = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2); console.log('[KIOSK]', msg); }
+        function startLoading() { /* placeholder */ }
+        function stopLoading() { /* placeholder */ }
+
+
+
+        /* =========================================================
+           Employee Exists (frappe.db.exists via backend)
+          /* =========================================================
+           Employee Exists (FIXED)
+           ========================================================= */
+        async function employeeExists(employee_id) {
+          if (!employee_id) return false;
+
+          return new Promise(async resolve => {
+            const r = await callURL("smart_attendance.smart_attendance.api.custom_checkin_employee_id.check_employee_exists", { employee_id });
+            resolve(r?.message === true);
+          });
+        }
+
+
+
+        /* ================= DAILY LOGS POPUP LOGIC ================= */
+        async function fetchAndShowDailyLogs(employee_id) {
+          detecting = false; // Pause detection
+
+          // Update Title
+          document.querySelector('#dailyLogsModal .modal-title').innerText = `Daily Logs: ${employee_id}`;
+
+          // Fetch logs
+          try {
+          // Fetch logs
+          try {
+              const logsData = await callURL("frappe.client.get_list", {
+                  doctype: "Employee Checkin",
+                  filters: JSON.stringify([
+                    ["employee", "=", employee_id],
+                    ["time", ">=", frappe.datetime.get_today() + " 00:00:00"],
+                    ["time", "<=", frappe.datetime.get_today() + " 23:59:59"]
+                  ]),
+                  fields: JSON.stringify(["name", "log_type", "time", "employee_name"]),
+                  order_by: "time desc",
+                  limit_page_length: 100
+              });
+              const logs = logsData.message || [];
+
+            const list = document.getElementById('modalLogsList');
+            list.innerHTML = '';
+
+            if (logs.length === 0) {
+              list.innerHTML = '<div style="padding:14px; text-align:center; color:#64748b;">No logs found today</div>';
+              document.querySelector('#dailyLogsModal .modal-title').innerText = `Daily Logs (0)`;
+            } else {
+              // Update title with Name and Count
+              const count = logs.length;
+              const name = logs[0].employee_name || employee_id;
+              document.querySelector('#dailyLogsModal .modal-title').innerText = `Daily Logs (${count}): ${name}`;
+
+              logs.forEach(l => {
+                const time = l.time.split(' ')[1].substring(0, 5); // HH:mm
+                const typeClass = l.log_type === 'IN' ? 'in' : 'out';
+                list.innerHTML += `
                     <div class="modal-log-item">
                         <div style="flex:1; text-align:left;">
                             <div style="font-weight:600; font-size:15px; color:#fff;">${time}</div>
@@ -1119,96 +1181,80 @@
                         <span class="${typeClass}" style="font-size:15px; align-self:center;">${l.log_type}</span>
                     </div>
                 `;
-          });
+              });
+            }
+
+            const modal = document.getElementById('dailyLogsModal');
+            modal.classList.add('active');
+
+          } catch (e) {
+            console.error("Error fetching logs", e);
+            // If error, just resume
+            detecting = true;
+          }
         }
 
-        const modal = document.getElementById('dailyLogsModal');
-        modal.classList.add('active');
+        document.getElementById('modalOkBtn').addEventListener('click', () => {
+          document.getElementById('dailyLogsModal').classList.remove('active');
 
-      } catch (e) {
-        console.error("Error fetching logs", e);
-        // If error, just resume
-        detecting = true;
-      }
-    }
+          // ✅ Reset for the NEXT person
+          empInput.value = '';
+          inoutBadge.classList.add('hidden');
+          inoutBtn.innerText = '✅ IN'; // Default reset
+          inoutBtn.className = 'in-btn';
 
-    document.getElementById('modalOkBtn').addEventListener('click', () => {
-      document.getElementById('dailyLogsModal').classList.remove('active');
+          // Hide preview
+          imgPreview.classList.add('hidden');
 
-      // ✅ Reset for the NEXT person
-      empInput.value = '';
-      inoutBadge.classList.add('hidden');
-      inoutBtn.innerText = '✅ IN'; // Default reset
-      inoutBtn.className = 'in-btn';
-
-      // Hide preview
-      imgPreview.classList.add('hidden');
-
-      // Resume detection
-      setTimeout(() => { detecting = true; stableSince = null; }, 600);
-    });
-
-
-    /* ---------- ERPNext API helpers (frappe.call) ---------- */
-    /* Get last Employee Checkin's log_type */
-    async function getLastLogType(employee_id) {
-      try {
-        if (!employee_id) return null;
-        return new Promise((res, rej) => {
-          frappe.call({
-            method: "smart_attendance.smart_attendance.api.custom_checkin_employee_id.get_last_log",
-            args: { employee_id },
-            callback: function (r) {
-              res(r?.message || "OUT");
-            },
-            error: function () { res("OUT"); }
-          });
+          // Resume detection
+          setTimeout(() => { detecting = true; stableSince = null; }, 600);
         });
-      } catch (e) { console.error('Last log error', e); return null; }
-    }
 
 
-    /* Create Employee Checkin using frappe.client.insert */
-    // Old helpers removed
-
-
-
-    /* =========================================================
-       FINAL markAttendance (WITH VALIDATION)
-       ========================================================= */
-    async function markAttendance(employee_id, explicit_type = null, image_base64 = null) {
-      try {
-        // 1. If Employee ID is provided, validate it exists (Optional optimization)
-        if (employee_id) {
-          const exists = await employeeExists(employee_id);
-          if (!exists) {
-            show3DNotify('error', '❌ Employee not found');
-            return;
-          }
-        } else {
-          // If no Employee ID, we MUST have an image
-          if (!image_base64) {
-            show3DNotify('error', '❌ Face or ID required');
-            return;
-          }
+        /* ---------- ERPNext API helpers (frappe.call) ---------- */
+        /* Get last Employee Checkin's log_type */
+        async function getLastLogType(employee_id) {
+          try {
+            if (!employee_id) return null;
+            const r = await callURL("smart_attendance.smart_attendance.api.custom_checkin_employee_id.get_last_log", { employee_id });
+            return r?.message || "OUT";
+          } catch (e) { console.error('Last log error', e); return null; }
         }
 
-        // 2. Call Backend to Mark Attendance (Using Face Verification API)
-        // This API handles both:
-        // A) Known Employee ID + Face (Verification) -> not strictly doing this yet in frontend flow but backend supports it
-        // B) No Employee ID + Face (Identification/Search) -> THIS IS WHAT WE WANT
-        // C) Just Employee ID (Manual)? -> We should probably stick to `mark_attendance_by_face` for consistency or fallback.
 
-        // Actually, if we have an image, we should ALWAYS use mark_attendance_by_face to ensure face logs are created.
+        /* Create Employee Checkin using frappe.client.insert */
+        // Old helpers removed
 
-        frappe.call({
-          method: "smart_attendance.smart_attendance.api.face_verification.mark_attendance_by_face",
-          args: {
-            employee: employee_id,
-            image_base64: image_base64,
-            log_type: explicit_type || "AUTO"
-          },
-          callback: function (r) {
+
+
+        /* =========================================================
+           FINAL markAttendance (WITH VALIDATION)
+           ========================================================= */
+        async function markAttendance(employee_id, explicit_type = null, image_base64 = null) {
+          try {
+            // 1. If Employee ID is provided, validate it exists (Optional optimization)
+            if (employee_id) {
+              const exists = await employeeExists(employee_id);
+              if (!exists) {
+                show3DNotify('error', '❌ Employee not found');
+                return;
+              }
+            } else {
+              // If no Employee ID, we MUST have an image
+              if (!image_base64) {
+                show3DNotify('error', '❌ Face or ID required');
+                return;
+              }
+            }
+
+            // 2. Call Backend to Mark Attendance (Using Face Verification API)
+            // Use POST for marking attendance
+            const r = await callPost("smart_attendance.smart_attendance.api.face_verification.mark_attendance_by_face", {
+                employee: employee_id || "",
+                image_base64: image_base64 || "",
+                log_type: explicit_type || "AUTO"
+            });
+
             if (r.message && r.message.ok) {
               const type = r.message.log_type;
               const name = r.message.employee_name || r.message.employee;
@@ -1224,225 +1270,220 @@
             } else {
               show3DNotify('error', r.message?.message || '❌ Attendance Failed');
             }
-          },
-          error: function (r) {
-            show3DNotify('error', '❌ Request Error');
+
+          } catch (e) {
+            console.error(e);
+            show3DNotify('error', '❌ Network Error');
           }
+        }
+
+
+        /* ---------- UI update ---------- */
+        const inoutBtn = document.getElementById('inout_btn');
+        async function updateInOutUI(employee_id) {
+          try {
+            const last = await getLastLogType(employee_id);
+            const next = last === 'IN' ? 'OUT' : 'IN';
+
+            // Button shows NEXT action
+            if (next === 'IN') {
+              inoutBtn.innerText = '✅ IN';
+              inoutBtn.className = 'in-btn';
+            } else {
+              inoutBtn.innerText = '⛔ OUT';
+              inoutBtn.className = 'out-btn';
+            }
+
+            // Badge shows CURRENT status (last)
+            if (last === 'IN') {
+              inoutBadge.className = 'badge in';
+              inoutBadge.innerText = 'IN';
+            } else {
+              inoutBadge.className = 'badge out';
+              inoutBadge.innerText = 'OUT';
+            }
+            inoutBadge.classList.remove('hidden');
+
+            // hide badge after short while
+            setTimeout(() => inoutBadge.classList.add('hidden'), 1600);
+          } catch (e) { console.error(e); }
+        }
+
+
+
+
+        /* ---------- Auto-capture handler ---------- */
+        let lastAutoCaptureAt = 0;
+        async function handleAutoCapture(detection) {
+          const now = Date.now();
+          if (now - lastAutoCaptureAt < 2800) return;
+          lastAutoCaptureAt = now;
+          await prepareCaptureCanvas();
+          ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+          imgPreview.src = dataUrl;
+          imgPreview.classList.remove('hidden');
+          const emp = empInput.value.trim();
+
+          // Auto-capture: Let backend decide IN/OUT
+          // Pass image!
+          markAttendance(emp, null, dataUrl);
+        }
+
+        async function prepareCaptureCanvas() {
+          const w = camera.videoWidth || 1280;
+          const h = camera.videoHeight || 720;
+          canvas.width = w; canvas.height = h;
+        }
+
+        /* ---------- Button bindings ---------- */
+        /* ---------- Button bindings ---------- */
+        captureBtn.addEventListener('click', async () => {
+          const emp = empInput.value.trim();
+
+          ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+          imgPreview.src = dataUrl;
+          imgPreview.classList.remove('hidden');
+
+          // Let backend decide
+          markAttendance(emp, null, dataUrl);
         });
 
-      } catch (e) {
-        console.error(e);
-        show3DNotify('error', '❌ Network Error');
-      }
-    }
+        inoutBtn.addEventListener('click', async () => {
+          const emp = empInput.value.trim();
+          // For manual IN/OUT without capture, we might still want an image or at least ID.
+          // If no ID, we MUST capture.
 
+          let dataUrl = null;
+          if (!emp) {
+            await prepareCaptureCanvas();
+            ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
+            dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+          }
 
-    /* ---------- UI update ---------- */
-    const inoutBtn = document.getElementById('inout_btn');
-    async function updateInOutUI(employee_id) {
-      try {
-        const last = await getLastLogType(employee_id);
-        const next = last === 'IN' ? 'OUT' : 'IN';
+          // If we have ID, we technically don't NEED face for manual button if we trust it, 
+          // but this is a face kiosk so let's always try to send face if available or allow fallback?
+          // For now, let's assume if they click the button, they want to mark.
+          // But `mark_attendance_by_face` REQUIRES image if no ID (and even with ID it compares).
+          // So we should always capture.
 
-        // Button shows NEXT action
-        if (next === 'IN') {
-          inoutBtn.innerText = '✅ IN';
-          inoutBtn.className = 'in-btn';
-        } else {
-          inoutBtn.innerText = '⛔ OUT';
-          inoutBtn.className = 'out-btn';
+          if (!dataUrl) {
+            await prepareCaptureCanvas();
+            ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
+            dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+          }
+
+          // Let backend decide
+          markAttendance(emp, null, dataUrl);
+        });
+
+        previewBtn.addEventListener('click', () => imgPreview.classList.toggle('hidden'));
+
+        /* ================= HOLIDAY LIST (FINAL & CLEAN) ================= */
+        /* ================= HOLIDAY LIST (FINAL & CLEAN) ================= */
+        // Promoted to main scope
+
+        // Event listener for employee input change
+        empInput.addEventListener('change', function () {
+          const emp = this.value.trim();
+          if (emp) loadNext15DaysHolidays(emp);
+        });
+
+        /* ================= LOAD HOLIDAYS ================= */
+
+        async function loadNext15DaysHolidays(employee_id = null) {
+          try {
+            const args = {};
+            if (employee_id) args.employee = employee_id;
+            
+            const data = await callURL("smart_attendance.smart_attendance.api.custom_holidays.fetch_next_15_days_holidays", args);
+            // console.log("Holiday API Response:", data);
+
+            renderNext15Days(data.message || {});
+          } catch (e) {
+            console.error("Holiday fetch error:", e);
+          }
         }
 
-        // Badge shows CURRENT status (last)
-        if (last === 'IN') {
-          inoutBadge.className = 'badge in';
-          inoutBadge.innerText = 'IN';
-        } else {
-          inoutBadge.className = 'badge out';
-          inoutBadge.innerText = 'OUT';
-        }
-        inoutBadge.classList.remove('hidden');
+        /* ================= RENDER ================= */
 
-        // hide badge after short while
-        setTimeout(() => inoutBadge.classList.add('hidden'), 1600);
-      } catch (e) { console.error(e); }
-    }
+        function renderNext15Days(data) {
+          const holidayBox = document.getElementById("holidayBox");
+          const holidayRange = document.getElementById("holidayRange");
 
+          holidayBox.innerHTML = "";
+          holidayRange.innerText = "";
 
+          if (!data.holidays || !data.holidays.length) {
+            holidayBox.innerHTML = "<p>No holidays</p>";
+            return;
+          }
 
+          holidayRange.innerText = "Next 15 Days";
 
-    /* ---------- Auto-capture handler ---------- */
-    let lastAutoCaptureAt = 0;
-    async function handleAutoCapture(detection) {
-      const now = Date.now();
-      if (now - lastAutoCaptureAt < 2800) return;
-      lastAutoCaptureAt = now;
-      await prepareCaptureCanvas();
-      ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
-      imgPreview.src = dataUrl;
-      imgPreview.classList.remove('hidden');
-      const emp = empInput.value.trim();
-
-      // Auto-capture: Let backend decide IN/OUT
-      // Pass image!
-      markAttendance(emp, null, dataUrl);
-    }
-
-    async function prepareCaptureCanvas() {
-      const w = camera.videoWidth || 1280;
-      const h = camera.videoHeight || 720;
-      canvas.width = w; canvas.height = h;
-    }
-
-    /* ---------- Button bindings ---------- */
-    /* ---------- Button bindings ---------- */
-    captureBtn.addEventListener('click', async () => {
-      const emp = empInput.value.trim();
-
-      ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
-      imgPreview.src = dataUrl;
-      imgPreview.classList.remove('hidden');
-
-      // Let backend decide
-      markAttendance(emp, null, dataUrl);
-    });
-
-    inoutBtn.addEventListener('click', async () => {
-      const emp = empInput.value.trim();
-      // For manual IN/OUT without capture, we might still want an image or at least ID.
-      // If no ID, we MUST capture.
-
-      let dataUrl = null;
-      if (!emp) {
-        await prepareCaptureCanvas();
-        ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
-        dataUrl = canvas.toDataURL('image/jpeg', 0.86);
-      }
-
-      // If we have ID, we technically don't NEED face for manual button if we trust it, 
-      // but this is a face kiosk so let's always try to send face if available or allow fallback?
-      // For now, let's assume if they click the button, they want to mark.
-      // But `mark_attendance_by_face` REQUIRES image if no ID (and even with ID it compares).
-      // So we should always capture.
-
-      if (!dataUrl) {
-        await prepareCaptureCanvas();
-        ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
-        dataUrl = canvas.toDataURL('image/jpeg', 0.86);
-      }
-
-      // Let backend decide
-      markAttendance(emp, null, dataUrl);
-    });
-
-    previewBtn.addEventListener('click', () => imgPreview.classList.toggle('hidden'));
-
-    /* ================= HOLIDAY LIST (FINAL & CLEAN) ================= */
-    /* ================= HOLIDAY LIST (FINAL & CLEAN) ================= */
-    // Promoted to main scope
-
-    // Event listener for employee input change
-    empInput.addEventListener('change', function () {
-      const emp = this.value.trim();
-      if (emp) loadNext15DaysHolidays(emp);
-    });
-
-    /* ================= LOAD HOLIDAYS ================= */
-
-    async function loadNext15DaysHolidays(employee_id = null) {
-      try {
-        const params = new URLSearchParams();
-        if (employee_id) params.append("employee", employee_id);
-
-        const res = await fetch(
-          "/api/method/smart_attendance.smart_attendance.api.custom_holidays.fetch_next_15_days_holidays?" + params.toString()
-        );
-
-        const data = await res.json();
-        console.log("Holiday API Response:", data);
-
-        renderNext15Days(data.message || {});
-      } catch (e) {
-        console.error("Holiday fetch error:", e);
-      }
-    }
-
-    /* ================= RENDER ================= */
-
-    function renderNext15Days(data) {
-      const holidayBox = document.getElementById("holidayBox");
-      const holidayRange = document.getElementById("holidayRange");
-
-      holidayBox.innerHTML = "";
-      holidayRange.innerText = "";
-
-      if (!data.holidays || !data.holidays.length) {
-        holidayBox.innerHTML = "<p>No holidays</p>";
-        return;
-      }
-
-      holidayRange.innerText = "Next 15 Days";
-
-      data.holidays.forEach((h, i) => {
-        holidayBox.innerHTML += `
+          data.holidays.forEach((h, i) => {
+            holidayBox.innerHTML += `
       <div class="holiday-item">
         <b>${i + 1}. ${h.date}</b><br>
         ${h.name}
       </div>
     `;
-      });
-    }
+          });
+        }
 
-    /* ================= INIT ================= */
+        /* ================= INIT ================= */
 
-    // ✅ Load holidays on page load (today → next 15 days)
-    // ✅ Load holidays on page load (today → next 15 days)
-    loadNext15DaysHolidays();
-
-    /* ================= INIT ================= */
-
-
-
-    document.addEventListener("click", function once() {
-      unlockAudio();
-      document.removeEventListener("click", once);
-    });
-
-    /* ---------- Page load updates ---------- */
-    setTimeout(() => { const emp = empInput.value.trim(); if (emp) updateInOutUI(emp); }, 800);
-
-    /* ---------- Unlock audio on first interaction ---------- */
-    document.addEventListener('click', function once() {
-      try { audioCtx && audioCtx.resume && audioCtx.resume(); } catch (e) { }
-      document.removeEventListener('click', once);
-    });
-
-    /* ---------- Initial load ---------- */
-    async function initKiosk() {
-      console.log("Initializing Kiosk...");
-      try {
-        await loadKioskSettings();
-      } catch (err) {
-        console.error("Error loading kiosk settings:", err);
-      }
-
-      try {
+        // ✅ Load holidays on page load (today → next 15 days)
+        // ✅ Load holidays on page load (today → next 15 days)
         loadNext15DaysHolidays();
-      } catch (err) {
-        console.error("Error loading holidays:", err);
-      }
 
-      setTimeout(resizeOverlay, 600);
-    }
+        /* ================= INIT ================= */
 
-    if (document.readyState === 'complete') {
-      initKiosk();
-    } else {
-      window.addEventListener('load', initKiosk);
-    }
 
-  })(); /* IIFE end */
-</script>
-{% endblock %}
+
+        document.addEventListener("click", function once() {
+          unlockAudio();
+          document.removeEventListener("click", once);
+        });
+
+        /* ---------- Page load updates ---------- */
+        setTimeout(() => { const emp = empInput.value.trim(); if (emp) updateInOutUI(emp); }, 800);
+
+        /* ---------- Unlock audio on first interaction ---------- */
+        document.addEventListener('click', function once() {
+          try { audioCtx && audioCtx.resume && audioCtx.resume(); } catch (e) { }
+          document.removeEventListener('click', once);
+        });
+
+        /* ---------- Initial load ---------- */
+        async function initKiosk() {
+          console.log("Initializing Kiosk...");
+          try {
+            await loadKioskSettings();
+          } catch (err) {
+            console.error("Error loading kiosk settings:", err);
+          }
+
+          try {
+            loadNext15DaysHolidays();
+          } catch (err) {
+            console.error("Error loading holidays:", err);
+          }
+
+          setTimeout(resizeOverlay, 600);
+        }
+
+        if (document.readyState === 'complete') {
+          initKiosk();
+        } else {
+          window.addEventListener('load', initKiosk);
+        }
+
+      })(); /* IIFE end */
+    </script>
+    </script>
+  </div>
+</body>
+
+</html>
