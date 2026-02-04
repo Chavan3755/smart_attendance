@@ -132,7 +132,7 @@ def attach_image_to_fal(fal_name, image_base64):
 
 # ------------ ✅ MAIN API ------------
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_type: str = "AUTO", tolerance: float = 0.40):
     """
     Inputs:

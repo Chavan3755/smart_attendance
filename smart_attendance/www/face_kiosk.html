@@ -913,22 +913,38 @@
     window.addEventListener('resize', resizeOverlay);
 
     /* ---------- face-api models ---------- */
+    /* ---------- face-api models ---------- */
     const modelUrl = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
     modelStatus.innerText = 'Loading models (CDN)…';
-    await faceapi.nets.tinyFaceDetector.loadFromUri(modelUrl);
-    await faceapi.nets.faceLandmark68Net.loadFromUri(modelUrl);
-    modelStatus.innerText = 'Models loaded';
-    logDebug('face-api loaded');
+
+    let detectOptions;
+
+    try {
+      if (typeof faceapi === 'undefined') {
+        throw new Error("face-api library not loaded from CDN");
+      }
+
+      await faceapi.nets.tinyFaceDetector.loadFromUri(modelUrl);
+      await faceapi.nets.faceLandmark68Net.loadFromUri(modelUrl);
+      modelStatus.innerText = 'Models loaded';
+      logDebug('face-api loaded');
+
+      detectOptions = new faceapi.TinyFaceDetectorOptions({
+        inputSize: 256,
+        scoreThreshold: 0.5
+      });
+
+    } catch (e) {
+      console.error("Critical Kiosk Error:", e);
+      modelStatus.innerText = 'Error: AI Models Failed';
+      show3DNotify('error', 'AI Model Error');
+      // Stop execution of further logic that depends on faceapi
+      return;
+    }
 
     // ---------- AI helpers ----------
     let stableSince = null;
     let detecting = true;
-    // let isLivenessConfirmed = false; // 🔒 Security Flag Removed
-
-    const detectOptions = new faceapi.TinyFaceDetectorOptions({
-      inputSize: 256,
-      scoreThreshold: 0.5
-    });
 
     async function detectionLoop() {
       if (!detecting || camera.readyState < 2) {
@@ -1274,7 +1290,7 @@
       const w = camera.videoWidth || 1280;
       const h = camera.videoHeight || 720;
       canvas.width = w; canvas.height = h;
-    }                                           
+    }
 
     /* ---------- Button bindings ---------- */
     /* ---------- Button bindings ---------- */
@@ -1401,11 +1417,28 @@
     });
 
     /* ---------- Initial load ---------- */
-    await loadKioskSettings();
-    loadNext15DaysHolidays();
+    async function initKiosk() {
+      console.log("Initializing Kiosk...");
+      try {
+        await loadKioskSettings();
+      } catch (err) {
+        console.error("Error loading kiosk settings:", err);
+      }
 
+      try {
+        loadNext15DaysHolidays();
+      } catch (err) {
+        console.error("Error loading holidays:", err);
+      }
 
-    setTimeout(resizeOverlay, 600);
+      setTimeout(resizeOverlay, 600);
+    }
+
+    if (document.readyState === 'complete') {
+      initKiosk();
+    } else {
+      window.addEventListener('load', initKiosk);
+    }
 
   })(); /* IIFE end */
 </script>
