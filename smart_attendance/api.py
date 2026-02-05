@@ -114,11 +114,18 @@ def verify_face(device_id=None, device_secret=None, image_base64=None, confidenc
     best = None
     best_dist = 1.0
     for f in faces:
-        known = json.loads(f.face_encoding)
-        dist = face_recognition.face_distance([known], unknown_encoding)[0]
-        if dist < best_dist:
-            best_dist = dist
-            best = f
+        if not f.face_encoding:
+            continue
+            
+        try:
+            known = json.loads(f.face_encoding)
+            dist = face_recognition.face_distance([known], unknown_encoding)[0]
+            if dist < best_dist:
+                best_dist = dist
+                best = f
+        except Exception as e:
+            frappe.log_error(f"Error processing face encoding for {f.name}: {str(e)}")
+            continue
     confidence = float(1.0 - best_dist) if best else 0.0
     if best and confidence >= float(confidence_threshold):
         att = frappe.get_doc({
@@ -144,11 +151,12 @@ def verify_face(device_id=None, device_secret=None, image_base64=None, confidenc
                 "time": frappe.utils.now_datetime(),
                 "device_id": device_id
             }).insert(ignore_permissions=True)
+            
+            return {"status":"success", "ok": True, "employee": best.employee, "employee_name": best.employee, "confidence": confidence, "log_type": "IN"}
         except Exception as e:
             frappe.log_error(f"Failed to create Employee Checkin: {str(e)}")
+            return {"status":"success", "ok": False, "message": f"Face matched but Check-in failed: {str(e)}", "employee": best.employee, "confidence": confidence}
         # ---------------------------
-
-        return {"status":"success", "employee": best.employee, "confidence": confidence}
     else:
         # unmatched / low-confidence
         status = "Low Confidence" if best else "Unmatched"
