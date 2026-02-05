@@ -1,0 +1,122 @@
+import frappe
+from frappe.utils import nowdate
+
+@frappe.whitelist(allow_guest=True)
+def check_employee_exists(employee_id):
+    """Simple check if employee exists. Returns boolean."""
+    if not employee_id: 
+        return False
+    return bool(frappe.db.exists("Employee", employee_id))
+
+@frappe.whitelist(allow_guest=True)
+def get_last_log(employee_id):
+    """Get the last log type for an employee (IN or OUT). Defaults to OUT (so next is IN)."""
+    if not employee_id:
+        return "OUT"
+        
+    # RAW SQL to bypass all permission/ORM layers
+    last_log = frappe.db.sql("""
+        SELECT log_type FROM `tabEmployee Checkin`
+        WHERE employee = %s
+        ORDER BY time DESC
+        LIMIT 1
+    """, (employee_id,))
+    
+    if last_log and last_log[0][0]:
+        return last_log[0][0]
+        
+    return "OUT"
+
+@frappe.whitelist(allow_guest=True)
+def mark_kiosk_attendance(employee_id, log_type=None):
+    """
+    Safely mark attendance.
+    If log_type is provided, uses it. 
+    Otherwise compares with last log to toggle IN/OUT.
+    """
+    if not employee_id:
+        return {"ok": False, "message": "Employee ID required"}
+
+    if not frappe.db.exists("Employee", employee_id):
+        return {"ok": False, "message": "Employee not found"}
+
+    # 30-Second Cooldown Check
+    last_log_time = frappe.db.get_value("Employee Checkin", 
+        {"employee": employee_id}, 
+        "time", 
+        order_by="creation desc"
+    )
+    
+    if last_log_time:
+        # Convert to datetime if it's a string (though frappe usually returns datetime object)
+        # Assuming last_log_time is datetime or similar comparable
+        diff = (frappe.utils.now_datetime() - frappe.utils.get_datetime(last_log_time)).total_seconds()
+        if diff < 30:
+            return {"ok": False, "message": f"Please wait {int(30 - diff)}s before next check-in."}
+
+    # Determine log type if not provided
+    if not log_type:
+        # Fetch last log details (Type + Time)
+        last_checkin = frappe.db.get_value("Employee Checkin", 
+            {"employee": employee_id}, 
+            ["log_type", "time"], 
+            order_by="time desc"
+        )
+
+        if last_checkin:
+            l_type, l_time = last_checkin
+            
+            # Default toggle behavior
+            log_type = "OUT" if l_type == "IN" else "IN"
+            
+            # 🧠 Smart Correction:
+            # If last was 'IN' but it was > 15 hours ago (e.g. forgot to checkout yesterday),
+            # then today morning should be 'IN'.
+            if l_type == "IN":
+                # Calculate diff
+                l_datetime = frappe.utils.get_datetime(l_time)
+                diff_hours = frappe.utils.time_diff_in_hours(frappe.utils.now_datetime(), l_datetime)
+                
+                if diff_hours > 15:
+                    log_type = "IN"
+        else:
+            log_type = "IN"
+
+    # Create Checkin
+    checkin = frappe.get_doc({
+        "doctype": "Employee Checkin",
+        "employee": employee_id,
+        "log_type": log_type,
+        "device_id": "FACE_KIOSK",
+        "time": frappe.utils.now_datetime()
+    })
+    checkin.insert(ignore_permissions=True)
+
+    # Auto-create Attendance Record for 'IN'
+    if log_type == "IN":
+        _create_attendance_if_missing(employee_id)
+    
+    # 🔴 CRITICAL: Commit immediately so subsequent reads see it
+    frappe.db.commit()
+
+    return {
+        "ok": True,
+        "log_type": log_type,
+        "employee": employee_id,
+        "time": checkin.time
+    }
+
+def _create_attendance_if_missing(employee_id):
+    """Creates a 'Present' attendance record for today if one doesn't exist."""
+    today = nowdate()
+    if not frappe.db.exists("Attendance", {"employee": employee_id, "attendance_date": today}):
+        try:
+            doc = frappe.get_doc({
+                "doctype": "Attendance",
+                "employee": employee_id,
+                "attendance_date": today,
+                "status": "Present"
+            })
+            doc.insert(ignore_permissions=True)
+        except Exception:
+            pass # Ignore if duplicate error or other issues
