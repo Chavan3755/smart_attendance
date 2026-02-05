@@ -1209,278 +1209,279 @@
                         // Resume detection
                         setTimeout(() => { detecting = true; stableSince = null; }, 600);
                     });
+                } // End fetchAndShowDailyLogs
 
 
-                    /* ---------- ERPNext API helpers (frappe.call) ---------- */
-                    /* Get last Employee Checkin's log_type */
-                    async function getLastLogType(employee_id) {
-                        try {
-                            if (!employee_id) return null;
-                            const r = await callURL("smart_attendance.smart_attendance.api.custom_checkin_employee_id.get_last_log", { employee_id });
-                            return r?.message || "OUT";
-                        } catch (e) { console.error('Last log error', e); return null; }
-                    }
+                /* ---------- ERPNext API helpers (frappe.call) ---------- */
+                /* Get last Employee Checkin's log_type */
+                async function getLastLogType(employee_id) {
+                    try {
+                        if (!employee_id) return null;
+                        const r = await callURL("smart_attendance.smart_attendance.api.custom_checkin_employee_id.get_last_log", { employee_id });
+                        return r?.message || "OUT";
+                    } catch (e) { console.error('Last log error', e); return null; }
+                }
 
 
-                    /* Create Employee Checkin using frappe.client.insert */
-                    // Old helpers removed
+                /* Create Employee Checkin using frappe.client.insert */
+                // Old helpers removed
 
 
 
-                    /* =========================================================
-                       FINAL markAttendance (WITH VALIDATION)
-                       ========================================================= */
-                    async function markAttendance(employee_id, explicit_type = null, image_base64 = null) {
-                        try {
-                            // 1. If Employee ID is provided, validate it exists (Optional optimization)
-                            if (employee_id) {
-                                const exists = await employeeExists(employee_id);
-                                if (!exists) {
-                                    show3DNotify('error', '❌ Employee not found');
-                                    return;
-                                }
-                            } else {
-                                // If no Employee ID, we MUST have an image
-                                if (!image_base64) {
-                                    show3DNotify('error', '❌ Face or ID required');
-                                    return;
-                                }
+                /* =========================================================
+                   FINAL markAttendance (WITH VALIDATION)
+                   ========================================================= */
+                async function markAttendance(employee_id, explicit_type = null, image_base64 = null) {
+                    try {
+                        // 1. If Employee ID is provided, validate it exists (Optional optimization)
+                        if (employee_id) {
+                            const exists = await employeeExists(employee_id);
+                            if (!exists) {
+                                show3DNotify('error', '❌ Employee not found');
+                                return;
                             }
-
-                            // 2. Call Backend to Mark Attendance (Using Face Verification API)
-                            // Use POST for marking attendance
-                            const r = await callPost("smart_attendance.smart_attendance.api.face_verification.mark_attendance_by_face", {
-                                employee: employee_id || "",
-                                image_base64: image_base64 || "",
-                                log_type: explicit_type || "AUTO"
-                            });
-
-                            if (r.message && r.message.ok) {
-                                const type = r.message.log_type;
-                                const name = r.message.employee_name || r.message.employee;
-                                show3DNotify(type === 'IN' ? 'in' : 'out', type === 'IN' ? `✅ IN: ${name}` : `⛔ OUT: ${name}`);
-
-                                const detectedId = r.message.employee;
-
-                                // ✅ Update Input
-                                document.getElementById('employee_id').value = detectedId;
-
-                                updateInOutUI(detectedId);
-                                setTimeout(() => fetchAndShowDailyLogs(detectedId), 800);
-                            } else {
-                                show3DNotify('error', r.message?.message || '❌ Attendance Failed');
+                        } else {
+                            // If no Employee ID, we MUST have an image
+                            if (!image_base64) {
+                                show3DNotify('error', '❌ Face or ID required');
+                                return;
                             }
-
-                        } catch (e) {
-                            console.error(e);
-                            show3DNotify('error', '❌ Network Error');
                         }
+
+                        // 2. Call Backend to Mark Attendance (Using Face Verification API)
+                        // Use POST for marking attendance
+                        const r = await callPost("smart_attendance.smart_attendance.api.verify_face", {
+                            employee: employee_id || "",
+                            image_base64: image_base64 || "",
+                            log_type: explicit_type || "AUTO"
+                        });
+
+                        if (r.message && r.message.ok) {
+                            const type = r.message.log_type;
+                            const name = r.message.employee_name || r.message.employee;
+                            show3DNotify(type === 'IN' ? 'in' : 'out', type === 'IN' ? `✅ IN: ${name}` : `⛔ OUT: ${name}`);
+
+                            const detectedId = r.message.employee;
+
+                            // ✅ Update Input
+                            document.getElementById('employee_id').value = detectedId;
+
+                            updateInOutUI(detectedId);
+                            setTimeout(() => fetchAndShowDailyLogs(detectedId), 800);
+                        } else {
+                            show3DNotify('error', r.message?.message || '❌ Attendance Failed');
+                        }
+
+                    } catch (e) {
+                        console.error(e);
+                        show3DNotify('error', '❌ Network Error');
                     }
+                }
 
 
-                    /* ---------- UI update ---------- */
-                    const inoutBtn = document.getElementById('inout_btn');
-                    async function updateInOutUI(employee_id) {
-                        try {
-                            const last = await getLastLogType(employee_id);
-                            const next = last === 'IN' ? 'OUT' : 'IN';
+                /* ---------- UI update ---------- */
+                const inoutBtn = document.getElementById('inout_btn');
+                async function updateInOutUI(employee_id) {
+                    try {
+                        const last = await getLastLogType(employee_id);
+                        const next = last === 'IN' ? 'OUT' : 'IN';
 
-                            // Button shows NEXT action
-                            if (next === 'IN') {
-                                inoutBtn.innerText = '✅ IN';
-                                inoutBtn.className = 'in-btn';
-                            } else {
-                                inoutBtn.innerText = '⛔ OUT';
-                                inoutBtn.className = 'out-btn';
-                            }
+                        // Button shows NEXT action
+                        if (next === 'IN') {
+                            inoutBtn.innerText = '✅ IN';
+                            inoutBtn.className = 'in-btn';
+                        } else {
+                            inoutBtn.innerText = '⛔ OUT';
+                            inoutBtn.className = 'out-btn';
+                        }
 
-                            // Badge shows CURRENT status (last)
-                            if (last === 'IN') {
-                                inoutBadge.className = 'badge in';
-                                inoutBadge.innerText = 'IN';
-                            } else {
-                                inoutBadge.className = 'badge out';
-                                inoutBadge.innerText = 'OUT';
-                            }
-                            inoutBadge.classList.remove('hidden');
+                        // Badge shows CURRENT status (last)
+                        if (last === 'IN') {
+                            inoutBadge.className = 'badge in';
+                            inoutBadge.innerText = 'IN';
+                        } else {
+                            inoutBadge.className = 'badge out';
+                            inoutBadge.innerText = 'OUT';
+                        }
+                        inoutBadge.classList.remove('hidden');
 
-                            // hide badge after short while
-                            setTimeout(() => inoutBadge.classList.add('hidden'), 1600);
-                        } catch (e) { console.error(e); }
-                    }
-
-
+                        // hide badge after short while
+                        setTimeout(() => inoutBadge.classList.add('hidden'), 1600);
+                    } catch (e) { console.error(e); }
+                }
 
 
-                    /* ---------- Auto-capture handler ---------- */
-                    let lastAutoCaptureAt = 0;
-                    async function handleAutoCapture(detection) {
-                        const now = Date.now();
-                        if (now - lastAutoCaptureAt < 2800) return;
-                        lastAutoCaptureAt = now;
+
+
+                /* ---------- Auto-capture handler ---------- */
+                let lastAutoCaptureAt = 0;
+                async function handleAutoCapture(detection) {
+                    const now = Date.now();
+                    if (now - lastAutoCaptureAt < 2800) return;
+                    lastAutoCaptureAt = now;
+                    await prepareCaptureCanvas();
+                    ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+                    imgPreview.src = dataUrl;
+                    imgPreview.classList.remove('hidden');
+                    const emp = empInput.value.trim();
+
+                    // Auto-capture: Let backend decide IN/OUT
+                    // Pass image!
+                    markAttendance(emp, null, dataUrl);
+                }
+
+                async function prepareCaptureCanvas() {
+                    const w = camera.videoWidth || 1280;
+                    const h = camera.videoHeight || 720;
+                    canvas.width = w; canvas.height = h;
+                }
+
+                /* ---------- Button bindings ---------- */
+                /* ---------- Button bindings ---------- */
+                captureBtn.addEventListener('click', async () => {
+                    const emp = empInput.value.trim();
+
+                    ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+                    imgPreview.src = dataUrl;
+                    imgPreview.classList.remove('hidden');
+
+                    // Let backend decide
+                    markAttendance(emp, null, dataUrl);
+                });
+
+                inoutBtn.addEventListener('click', async () => {
+                    const emp = empInput.value.trim();
+                    // For manual IN/OUT without capture, we might still want an image or at least ID.
+                    // If no ID, we MUST capture.
+
+                    let dataUrl = null;
+                    if (!emp) {
                         await prepareCaptureCanvas();
                         ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
-                        const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
-                        imgPreview.src = dataUrl;
-                        imgPreview.classList.remove('hidden');
-                        const emp = empInput.value.trim();
-
-                        // Auto-capture: Let backend decide IN/OUT
-                        // Pass image!
-                        markAttendance(emp, null, dataUrl);
+                        dataUrl = canvas.toDataURL('image/jpeg', 0.86);
                     }
 
-                    async function prepareCaptureCanvas() {
-                        const w = camera.videoWidth || 1280;
-                        const h = camera.videoHeight || 720;
-                        canvas.width = w; canvas.height = h;
-                    }
+                    // If we have ID, we technically don't NEED face for manual button if we trust it, 
+                    // but this is a face kiosk so let's always try to send face if available or allow fallback?
+                    // For now, let's assume if they click the button, they want to mark.
+                    // But `mark_attendance_by_face` REQUIRES image if no ID (and even with ID it compares).
+                    // So we should always capture.
 
-                    /* ---------- Button bindings ---------- */
-                    /* ---------- Button bindings ---------- */
-                    captureBtn.addEventListener('click', async () => {
-                        const emp = empInput.value.trim();
-
+                    if (!dataUrl) {
+                        await prepareCaptureCanvas();
                         ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
-                        const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
-                        imgPreview.src = dataUrl;
-                        imgPreview.classList.remove('hidden');
-
-                        // Let backend decide
-                        markAttendance(emp, null, dataUrl);
-                    });
-
-                    inoutBtn.addEventListener('click', async () => {
-                        const emp = empInput.value.trim();
-                        // For manual IN/OUT without capture, we might still want an image or at least ID.
-                        // If no ID, we MUST capture.
-
-                        let dataUrl = null;
-                        if (!emp) {
-                            await prepareCaptureCanvas();
-                            ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
-                            dataUrl = canvas.toDataURL('image/jpeg', 0.86);
-                        }
-
-                        // If we have ID, we technically don't NEED face for manual button if we trust it, 
-                        // but this is a face kiosk so let's always try to send face if available or allow fallback?
-                        // For now, let's assume if they click the button, they want to mark.
-                        // But `mark_attendance_by_face` REQUIRES image if no ID (and even with ID it compares).
-                        // So we should always capture.
-
-                        if (!dataUrl) {
-                            await prepareCaptureCanvas();
-                            ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
-                            dataUrl = canvas.toDataURL('image/jpeg', 0.86);
-                        }
-
-                        // Let backend decide
-                        markAttendance(emp, null, dataUrl);
-                    });
-
-                    previewBtn.addEventListener('click', () => imgPreview.classList.toggle('hidden'));
-
-                    /* ================= HOLIDAY LIST (FINAL & CLEAN) ================= */
-                    /* ================= HOLIDAY LIST (FINAL & CLEAN) ================= */
-                    // Promoted to main scope
-
-                    // Event listener for employee input change
-                    empInput.addEventListener('change', function () {
-                        const emp = this.value.trim();
-                        if (emp) loadNext15DaysHolidays(emp);
-                    });
-
-                    /* ================= LOAD HOLIDAYS ================= */
-
-                    async function loadNext15DaysHolidays(employee_id = null) {
-                        try {
-                            const args = {};
-                            if (employee_id) args.employee = employee_id;
-
-                            const data = await callURL("smart_attendance.smart_attendance.api.fetch_next_15_days_holidays", args);
-                            // console.log("Holiday API Response:", data);
-
-                            renderNext15Days(data.message || {});
-                        } catch (e) {
-                            console.error("Holiday fetch error:", e);
-                        }
+                        dataUrl = canvas.toDataURL('image/jpeg', 0.86);
                     }
 
-                    /* ================= RENDER ================= */
+                    // Let backend decide
+                    markAttendance(emp, null, dataUrl);
+                });
 
-                    function renderNext15Days(data) {
-                        const holidayBox = document.getElementById("holidayBox");
-                        const holidayRange = document.getElementById("holidayRange");
+                previewBtn.addEventListener('click', () => imgPreview.classList.toggle('hidden'));
 
-                        holidayBox.innerHTML = "";
-                        holidayRange.innerText = "";
+                /* ================= HOLIDAY LIST (FINAL & CLEAN) ================= */
+                /* ================= HOLIDAY LIST (FINAL & CLEAN) ================= */
+                // Promoted to main scope
 
-                        if (!data.holidays || !data.holidays.length) {
-                            holidayBox.innerHTML = "<p>No holidays</p>";
-                            return;
-                        }
+                // Event listener for employee input change
+                empInput.addEventListener('change', function () {
+                    const emp = this.value.trim();
+                    if (emp) loadNext15DaysHolidays(emp);
+                });
 
-                        holidayRange.innerText = "Next 15 Days";
+                /* ================= LOAD HOLIDAYS ================= */
 
-                        data.holidays.forEach((h, i) => {
-                            holidayBox.innerHTML += `
+                async function loadNext15DaysHolidays(employee_id = null) {
+                    try {
+                        const args = {};
+                        if (employee_id) args.employee = employee_id;
+
+                        const data = await callURL("smart_attendance.smart_attendance.api.fetch_next_15_days_holidays", args);
+                        // console.log("Holiday API Response:", data);
+
+                        renderNext15Days(data.message || {});
+                    } catch (e) {
+                        console.error("Holiday fetch error:", e);
+                    }
+                }
+
+                /* ================= RENDER ================= */
+
+                function renderNext15Days(data) {
+                    const holidayBox = document.getElementById("holidayBox");
+                    const holidayRange = document.getElementById("holidayRange");
+
+                    holidayBox.innerHTML = "";
+                    holidayRange.innerText = "";
+
+                    if (!data.holidays || !data.holidays.length) {
+                        holidayBox.innerHTML = "<p>No holidays</p>";
+                        return;
+                    }
+
+                    holidayRange.innerText = "Next 15 Days";
+
+                    data.holidays.forEach((h, i) => {
+                        holidayBox.innerHTML += `
       <div class="holiday-item">
         <b>${i + 1}. ${h.date}</b><br>
         ${h.name}
       </div>
     `;
-                        });
-                    }
-
-                    /* ================= INIT ================= */
-
-                    // ✅ Load holidays on page load (today → next 15 days)
-                    // ✅ Load holidays on page load (today → next 15 days)
-                    loadNext15DaysHolidays();
-
-                    /* ================= INIT ================= */
-
-
-
-                    document.addEventListener("click", function once() {
-                        unlockAudio();
-                        document.removeEventListener("click", once);
                     });
-
-                    /* ---------- Page load updates ---------- */
-                    setTimeout(() => { const emp = empInput.value.trim(); if (emp) updateInOutUI(emp); }, 800);
-
-                    /* ---------- Unlock audio on first interaction ---------- */
-                    document.addEventListener('click', function once() {
-                        try { audioCtx && audioCtx.resume && audioCtx.resume(); } catch (e) { }
-                        document.removeEventListener('click', once);
-                    });
-
-                    /* ---------- Initial load ---------- */
-                    async function initKiosk() {
-                        console.log("Initializing Kiosk...");
-                        try {
-                            await loadKioskSettings();
-                        } catch (err) {
-                            console.error("Error loading kiosk settings:", err);
-                        }
-
-                        try {
-                            loadNext15DaysHolidays();
-                        } catch (err) {
-                            console.error("Error loading holidays:", err);
-                        }
-
-                        setTimeout(resizeOverlay, 600);
-                    }
-
-                    if (document.readyState === 'complete') {
-                        initKiosk();
-                    } else {
-                        window.addEventListener('load', initKiosk);
-                    }
-
                 }
+
+                /* ================= INIT ================= */
+
+                // ✅ Load holidays on page load (today → next 15 days)
+                // ✅ Load holidays on page load (today → next 15 days)
+                loadNext15DaysHolidays();
+
+                /* ================= INIT ================= */
+
+
+
+                document.addEventListener("click", function once() {
+                    unlockAudio();
+                    document.removeEventListener("click", once);
+                });
+
+                /* ---------- Page load updates ---------- */
+                setTimeout(() => { const emp = empInput.value.trim(); if (emp) updateInOutUI(emp); }, 800);
+
+                /* ---------- Unlock audio on first interaction ---------- */
+                document.addEventListener('click', function once() {
+                    try { audioCtx && audioCtx.resume && audioCtx.resume(); } catch (e) { }
+                    document.removeEventListener('click', once);
+                });
+
+                /* ---------- Initial load ---------- */
+                async function initKiosk() {
+                    console.log("Initializing Kiosk...");
+                    try {
+                        await loadKioskSettings();
+                    } catch (err) {
+                        console.error("Error loading kiosk settings:", err);
+                    }
+
+                    try {
+                        loadNext15DaysHolidays();
+                    } catch (err) {
+                        console.error("Error loading holidays:", err);
+                    }
+
+                    setTimeout(resizeOverlay, 600);
+                }
+
+                if (document.readyState === 'complete') {
+                    initKiosk();
+                } else {
+                    window.addEventListener('load', initKiosk);
+                }
+
+            }
             }); // End window load
 
         </script>
