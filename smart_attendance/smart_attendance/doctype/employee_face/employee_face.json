@@ -41,7 +41,7 @@
             "fieldtype": "Column Break"
         },
         {
-            "fieldname": "face_encoding",
+            "fieldname": "encoding",
             "fieldtype": "Long Text",
             "label": "Face Encoding"
         }

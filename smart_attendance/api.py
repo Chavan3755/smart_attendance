@@ -114,11 +114,11 @@ def verify_face(device_id=None, device_secret=None, image_base64=None, confidenc
     best = None
     best_dist = 1.0
     for f in faces:
-        if not f.face_encoding:
+        if not f.encoding:
             continue
             
         try:
-            known = json.loads(f.face_encoding)
+            known = json.loads(f.encoding)
             dist = face_recognition.face_distance([known], unknown_encoding)[0]
             if dist < best_dist:
                 best_dist = dist

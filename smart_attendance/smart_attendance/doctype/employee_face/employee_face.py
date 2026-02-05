@@ -21,7 +21,7 @@ class EmployeeFace(Document):
         should_encode = True
         if not self.is_new():
             old_doc = self.get_doc_before_save()
-            if old_doc and old_doc.face_image == self.face_image and self.face_encoding:
+            if old_doc and old_doc.face_image == self.face_image and self.encoding:
                 should_encode = False
         
         if should_encode:
@@ -104,7 +104,7 @@ def process_face_encoding(doc_name, file_url):
         encoding_str = json.dumps(encoding_list)
 
         # 3) Update DB
-        frappe.db.set_value("Employee Face", doc_name, "face_encoding", encoding_str)
+        frappe.db.set_value("Employee Face", doc_name, "encoding", encoding_str)
         
         # 4) FIX File Attachment
         files = frappe.get_all("File", filters={"file_url": file_url}, fields=["name", "attached_to_name"])
