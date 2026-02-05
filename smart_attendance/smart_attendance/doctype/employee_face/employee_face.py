@@ -4,11 +4,11 @@ from frappe.utils import get_site_path
 import os
 import json
 
-# Try importing DeepFace
+# Try importing face_recognition
 try:
-    from deepface import DeepFace
+    import face_recognition
 except ImportError:
-    DeepFace = None
+    face_recognition = None
 
 class EmployeeFace(Document):
     def validate(self):
@@ -38,7 +38,7 @@ def process_face_encoding(doc_name, file_url):
     """
     Background job to:
     1. Resolve file path
-    2. DeepFace.represent()
+    2. face_recognition.face_encodings()
     3. Save encoding
     4. Fix File attachment
     """
@@ -50,17 +50,12 @@ def process_face_encoding(doc_name, file_url):
         from frappe.utils import get_site_path
         
         try:
-            from deepface import DeepFace
+            import face_recognition
+            from PIL import Image
+            import numpy as np
         except ImportError:
-             # Try falling back to face_recognition if DeepFace is missing (as used in api.py)
-            try:
-                import face_recognition
-                # ... implement fallback or just error
-            except:
-                pass
-            
-            frappe.log_error("DeepFace/face_recognition not installed", "Employee Face Error")
-            # return
+            frappe.log_error("face_recognition not installed", "Employee Face Error")
+            return
 
         # 1) Resolve Path
         file_path = None
@@ -77,25 +72,16 @@ def process_face_encoding(doc_name, file_url):
             return
 
         # 2) Generate Encoding
-        # Check which library to use. `api.py` uses `face_recognition`.
-        # `employee_face.py` was using `DeepFace`.
-        # The user's other code suggests `face_recognition` is the standard.
-        # Let's use `face_recognition` to be consistent with `api.py` and prevent mismatches.
-        
         encoding_list = []
         try:
-            import face_recognition
-            from PIL import Image
-            import numpy as np
-            
             img = Image.open(file_path).convert('RGB')
             arr = np.array(img)
             encs = face_recognition.face_encodings(arr)
             if encs:
                 encoding_list = encs[0].tolist()
-        except ImportError:
-             # Fallback to logic if DeepFace was intended, but let's stick to one.
-             pass
+        except Exception as e:
+             frappe.log_error(f"Encoding Error: {str(e)}", "Employee Face Job")
+             return
 
         if not encoding_list:
              frappe.log_error(f"No face detected for {doc_name}", "Employee Face Job")
@@ -106,7 +92,7 @@ def process_face_encoding(doc_name, file_url):
         # 3) Update DB
         frappe.db.set_value("Employee Face", doc_name, "encoding", encoding_str)
         
-        # 4) FIX File Attachment
+        # 4) FIX File Attachment (Optional but good for housekeeping)
         files = frappe.get_all("File", filters={"file_url": file_url}, fields=["name", "attached_to_name"])
         for f in files:
             if f.attached_to_name != doc_name:

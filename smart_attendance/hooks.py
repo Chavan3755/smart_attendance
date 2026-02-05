@@ -248,6 +248,6 @@ override_whitelisted_methods = {
 
 # --- API methods exposed for kiosk (no CSRF) ---
 ignore_csrf = [
-    "smart_attendance.smart_attendance.api.verify_face",
-    "smart_attendance.smart_attendance.api.enroll_face",
+    "smart_attendance.api.verify_face",
+    "smart_attendance.api.enroll_face",
 ]

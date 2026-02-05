@@ -1025,6 +1025,20 @@
                 let stableSince = null;
                 let detecting = true;
 
+                /* ---------- LIVENESS / BLINK LOGIC ---------- */
+                let blinkCount = 0;
+                let eyeClosed = false;
+                let lastBlinkTime = 0;
+
+                function getEAR(eye) {
+                    const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+                    // eye is an array of 6 points
+                    const A = dist(eye[1], eye[5]);
+                    const B = dist(eye[2], eye[4]);
+                    const C = dist(eye[0], eye[3]);
+                    return (A + B) / (2.0 * C);
+                }
+
                 async function detectionLoop() {
                     if (!detecting || camera.readyState < 2) {
                         requestAnimationFrame(detectionLoop);
@@ -1042,7 +1056,10 @@
 
                         if (!dets || dets.length === 0) {
                             hint.style.display = "block";
+                            hint.innerText = "Align your face inside the box";
                             stableSince = null;
+                            // Reset blink on face loss? Optional. 
+                            // Let's reset if face is gone for > 2 seconds to prevent "pre-blinking"
                             requestAnimationFrame(detectionLoop);
                             return;
                         }
@@ -1056,15 +1073,50 @@
                             return;
                         }
 
-                        // ✅ Single face
-                        hint.style.display = "block";
-                        hint.innerText = "Face Detected";
+                        // ✅ Single face found
+                        const face = dets[0];
+                        const landmarks = face.landmarks;
+                        const leftEye = landmarks.getLeftEye();
+                        const rightEye = landmarks.getRightEye();
 
-                        // 🧠 Direct Auto Capture (No Liveness)
-                        if (feature_autocapture.checked) {
-                            handleAutoCapture(dets[0]);
+                        // Calculate EAR
+                        const leftEAR = getEAR(leftEye);
+                        const rightEAR = getEAR(rightEye);
+                        const avgEAR = (leftEAR + rightEAR) / 2.0;
+
+                        // Debug EAR
+                        // logDebug(`EAR: ${avgEAR.toFixed(3)} | Blinks: ${blinkCount}`);
+
+                        // Thresholds
+                        const CLOSED_THRESH = 0.22; // Slightly stricter than 0.26
+                        const OPEN_THRESH = 0.35;
+
+                        if (avgEAR < CLOSED_THRESH) {
+                            eyeClosed = true;
+                        } else if (avgEAR > OPEN_THRESH && eyeClosed) {
+                            // Transition Closed -> Open = Blink
+                            blinkCount++;
+                            eyeClosed = false;
+                            lastBlinkTime = Date.now();
+                            show3DNotify('in', '😉 Blink Verified!');
                         }
 
+                        // Hint Logic
+                        hint.style.display = "block";
+                        if (blinkCount === 0) {
+                            hint.innerText = "😉 Please BLINK to Verify";
+                            hint.style.color = "#fbbf24"; // warning color
+                            hint.style.border = "1px solid #fbbf24";
+                        } else {
+                            hint.innerText = "✅ Face Verified";
+                            hint.style.color = "#4ade80"; // success color
+                            hint.style.border = "1px solid #4ade80";
+
+                            // 🧠 Trigger Auto Capture if Blinked
+                            if (feature_autocapture.checked) {
+                                handleAutoCapture(face);
+                            }
+                        }
 
                     } catch (e) {
                         console.warn('detect error', e);
@@ -1072,16 +1124,6 @@
 
                     requestAnimationFrame(detectionLoop);
                 } // End detectionLoop
-
-
-                /* -----------------------------------------------------------
-                 *  Liveness Logic Removed
-                 * ----------------------------------------------------------- */
-
-
-
-
-                detectionLoop();
 
 
 
@@ -1207,7 +1249,11 @@
                         imgPreview.classList.add('hidden');
 
                         // Resume detection
-                        setTimeout(() => { detecting = true; stableSince = null; }, 600);
+                        setTimeout(() => {
+                            detecting = true;
+                            stableSince = null;
+                            blinkCount = 0; // Reset liveness
+                        }, 600);
                     });
                 } // End fetchAndShowDailyLogs
 
@@ -1250,7 +1296,7 @@
 
                         // 2. Call Backend to Mark Attendance (Using Face Verification API)
                         // Use POST for marking attendance
-                        const r = await callPost("smart_attendance.smart_attendance.api.verify_face", {
+                        const r = await callPost("smart_attendance.api.verify_face", {
                             employee: employee_id || "",
                             image_base64: image_base64 || "",
                             log_type: explicit_type || "AUTO"
@@ -1340,6 +1386,10 @@
                 /* ---------- Button bindings ---------- */
                 /* ---------- Button bindings ---------- */
                 captureBtn.addEventListener('click', async () => {
+                    if (blinkCount === 0) {
+                        show3DNotify('error', 'Please BLINK to verify liveness first!');
+                        return;
+                    }
                     const emp = empInput.value.trim();
 
                     ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
@@ -1352,6 +1402,10 @@
                 });
 
                 inoutBtn.addEventListener('click', async () => {
+                    if (blinkCount === 0) {
+                        show3DNotify('error', 'Please BLINK to verify liveness first!');
+                        return;
+                    }
                     const emp = empInput.value.trim();
                     // For manual IN/OUT without capture, we might still want an image or at least ID.
                     // If no ID, we MUST capture.
@@ -1398,7 +1452,7 @@
                         const args = {};
                         if (employee_id) args.employee = employee_id;
 
-                        const data = await callURL("smart_attendance.smart_attendance.api.fetch_next_15_days_holidays", args);
+                        const data = await callURL("smart_attendance.api.fetch_next_15_days_holidays", args);
                         // console.log("Holiday API Response:", data);
 
                         renderNext15Days(data.message || {});

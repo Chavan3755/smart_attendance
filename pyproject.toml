@@ -8,17 +8,16 @@ requires-python = ">=3.10"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
-    "requests"
-]
-
-[project.optional-dependencies]
-ml = [
+    "requests",
     "face_recognition",
     "deepface",
     "tf-keras",
     "torch",
     "opencv-python"
 ]
+
+[project.optional-dependencies]
+# ml = []
 
 [build-system]
 requires = ["flit_core >=3.4,<4"]

@@ -12,7 +12,11 @@ def fetch_next_15_days_holidays(employee=None):
         if employee:
             holiday_list = frappe.db.get_value("Employee", employee, "holiday_list")
         else:
-            holiday_list = frappe.db.get_single_value("Attendance Manager Settings", "default_holiday_list")
+            # Safely check for settings
+            if frappe.db.exists("DocType", "Attendance Manager Settings"):
+                holiday_list = frappe.db.get_single_value("Attendance Manager Settings", "default_holiday_list")
+            else:
+                holiday_list = None
 
         if not holiday_list:
             # Fallback to any holiday list
@@ -63,7 +67,7 @@ def enroll_face(employee, image_base64):
     doc = frappe.get_doc({
         "doctype":"Employee Face",
         "employee": employee,
-        "face_encoding": json.dumps(encoding),
+        "encoding": json.dumps(encoding),
         "enrolled_by": frappe.session.user,
         "enrolled_on": frappe.utils.now_datetime()
     }).insert(ignore_permissions=True)
@@ -79,8 +83,41 @@ def enroll_face(employee, image_base64):
     return {"status":"ok", "doc": doc.name}
 
 @frappe.whitelist(allow_guest=True)
-def verify_face(device_id=None, device_secret=None, image_base64=None, confidence_threshold=0.6):
+def verify_face(device_id=None, device_secret=None, image_base64=None, confidence_threshold=0.6, employee=None, log_type="AUTO"):
     """Kiosk calls this endpoint (POST)."""
+    
+    frappe.log_error(f"Verify Face Called: Device={device_id}, Emp={employee}, HasImage={bool(image_base64)}", "Kiosk Debug")
+    
+    # SCREAM TEST (Temporary Debug)
+    # frappe.throw(f"DEBUG: dev={device_id} img={bool(image_base64)}")
+
+    # 0. WEB KIOSK DELEGATION
+    if (not device_id or device_id == "null"):
+         if not image_base64:
+             return {"ok": False, "message": "No image provided for Kiosk verification"}
+
+         try:
+             # Debug Step 1
+             frappe.log_error("Delegation Step 1: Importing face_verification", "Kiosk Debug")
+             frappe.db.commit() # FORCE COMMIT
+             
+             # Lazy import for safety
+             from smart_attendance.smart_attendance.api.face_verification import mark_attendance_by_face
+             
+             # Debug Step 2
+             frappe.log_error("Delegation Step 2: Import success. Calling function.", "Kiosk Debug")
+             frappe.db.commit() # FORCE COMMIT
+             
+             return mark_attendance_by_face(employee, image_base64, log_type, confidence_threshold)
+         except ImportError as e:
+             frappe.log_error(f"Import Error in Delegation: {str(e)}", "Kiosk Debug")
+             frappe.db.commit()
+             return {"ok": False, "message": f"Server Import Error: {str(e)}"}
+         except Exception as e:
+             frappe.log_error(f"Delegation Error: {str(e)}", "Kiosk Debug")
+             frappe.db.commit()
+             return {"ok": False, "message": f"Server Error: {str(e)}"}
+
     # authenticate device
     if not device_id or not device_secret:
         frappe.throw("Device credentials required")
@@ -109,7 +146,7 @@ def verify_face(device_id=None, device_secret=None, image_base64=None, confidenc
         return {"status":"unmatched", "reason":"no_face_detected"}
 
     # load all encodings (cache recommended)
-    faces = frappe.get_all("Employee Face", fields=["name","employee","face_encoding"])
+    faces = frappe.get_all("Employee Face", fields=["name","employee","encoding"])
     import face_recognition
     best = None
     best_dist = 1.0
