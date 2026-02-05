@@ -20,7 +20,9 @@
 </head>
 
 <body class="no-sidebar">
-    <script type="text/javascript" src="/assets/frappe/dist/js/bootstrap.bundle.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"
+        defer></script>
 
     <!-- CSRF Token -->
     <script>
@@ -664,8 +666,7 @@
 
                                         <div id="face-guide"></div>
 
-                                        <div id="cameraBg" class="camera-bg"
-                                            style="background-image:url('/files/0c261b40-99c5-4c9d-9a56-a9a8707f309e_image.png');">
+                                        <div id="cameraBg" class="camera-bg">
                                         </div>
 
                                         <video id="camera" autoplay playsinline muted></video>
@@ -797,7 +798,7 @@
         <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js" defer></script>
 
         <script>
-            (async function () {
+            window.addEventListener('load', async function () {
                 console.log("DEBUG: Kiosk Script Starting...");
                 const debugBanner = document.getElementById('debug-banner');
                 if (debugBanner) debugBanner.innerText += " JS Started...";
@@ -1396,7 +1397,7 @@
                             const args = {};
                             if (employee_id) args.employee = employee_id;
 
-                            const data = await callURL("smart_attendance.smart_attendance.api.custom_holidays.fetch_next_15_days_holidays", args);
+                            const data = await callURL("smart_attendance.smart_attendance.api.fetch_next_15_days_holidays", args);
                             // console.log("Holiday API Response:", data);
 
                             renderNext15Days(data.message || {});
@@ -1479,7 +1480,9 @@
                         window.addEventListener('load', initKiosk);
                     }
 
-                }) (); /* IIFE end */
+                }
+            }); // End window load
+
         </script>
 
     </div>

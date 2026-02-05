@@ -1,7 +1,52 @@
 # smart_attendance/smart_attendance/api.py
 import frappe
 import base64, io, json
-from datetime import datetime
+from datetime import datetime, date, timedelta
+
+@frappe.whitelist(allow_guest=True)
+def fetch_next_15_days_holidays(employee=None):
+    """
+    Returns holidays for the next 15 days.
+    """
+    try:
+        if employee:
+            holiday_list = frappe.db.get_value("Employee", employee, "holiday_list")
+        else:
+            holiday_list = frappe.db.get_single_value("Attendance Manager Settings", "default_holiday_list")
+
+        if not holiday_list:
+            # Fallback to any holiday list
+            holiday_list = frappe.db.get_value("Holiday List", {"is_default": 1}, "name")
+
+        if not holiday_list:
+             return {"holidays": []}
+
+        start_date = date.today()
+        end_date = start_date + timedelta(days=15)
+
+        holidays = frappe.get_all("Holiday",
+            filters={
+                "parent": holiday_list,
+                "holiday_date": ["between", [start_date, end_date]]
+            },
+            fields=["holiday_date", "description"],
+            order_by="holiday_date asc"
+        )
+        
+        # Format for frontend
+        formatted = []
+        for h in holidays:
+            formatted.append({
+                "date": frappe.utils.formatdate(h.holiday_date),
+                "name": h.description
+            })
+
+        return {"holidays": formatted}
+    except Exception as e:
+        frappe.log_error(f"Error checking holidays: {str(e)}")
+        return {"holidays": []}
+
+
 
 @frappe.whitelist()
 def enroll_face(employee, image_base64):
