@@ -134,6 +134,20 @@ def verify_face(device_id=None, device_secret=None, image_base64=None, confidenc
         frappe.db.commit()
         # update device last_seen
         frappe.db.set_value("Attendance Device", device_id, "last_seen", frappe.utils.now_datetime())
+
+        # --- STANDARD HR CHECKIN ---
+        try:
+            frappe.get_doc({
+                "doctype": "Employee Checkin",
+                "employee": best.employee,
+                "log_type": "IN", # Default to IN, or logic could be improved to toggle
+                "time": frappe.utils.now_datetime(),
+                "device_id": device_id
+            }).insert(ignore_permissions=True)
+        except Exception as e:
+            frappe.log_error(f"Failed to create Employee Checkin: {str(e)}")
+        # ---------------------------
+
         return {"status":"success", "employee": best.employee, "confidence": confidence}
     else:
         # unmatched / low-confidence

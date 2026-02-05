@@ -113,11 +113,19 @@ class FaceEnrollment {
             this.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
             this.videoEl.srcObject = this.stream;
 
-            this.videoEl.onloadedmetadata = () => {
-                this.videoEl.play();
-                this.resizeCanvas();
-                this.startDetectionLoop();
-            };
+            // Force play and wait
+            this.videoEl.play().catch(e => console.warn("Play error", e));
+
+            // Setup detection loop once video is ready
+            if (this.videoEl.readyState >= 2) {
+                this.onVideoReady();
+            } else {
+                this.videoEl.onloadedmetadata = () => this.onVideoReady();
+                // Fallback if event misses
+                setTimeout(() => {
+                    if (this.videoEl.readyState >= 2 && !this.scanActive) this.onVideoReady();
+                }, 2000);
+            }
 
         } catch (err) {
             console.error(err);
@@ -188,6 +196,12 @@ class FaceEnrollment {
     resizeCanvas() {
         if (!this.videoEl || !this.canvasEl) return;
         const dims = faceapi.matchDimensions(this.canvasEl, this.videoEl, true);
+    }
+
+    onVideoReady() {
+        if (this.scanActive) return; // already started
+        this.resizeCanvas();
+        this.startDetectionLoop();
     }
 
     async startDetectionLoop() {
