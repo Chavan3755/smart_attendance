@@ -71,7 +71,7 @@ app_license = "mit"
 # website_generators = ["Web Page"]
 
 website_route_rules = [
-    {"from_route": "/face_kiosk", "to_route": "smart_attendance/kiosk.html"},
+    {"from_route": "/face_kiosk", "to_route": "smart_kiosk_page"},
 ]
 
 
