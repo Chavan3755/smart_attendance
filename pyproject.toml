@@ -13,7 +13,8 @@ dependencies = [
     "deepface",
     "tf-keras",
     "torch",
-    "opencv-python"
+    "opencv-python",
+    "numpy<2.0.0"
 ]
 
 [project.optional-dependencies]
