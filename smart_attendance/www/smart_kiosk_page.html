@@ -1497,10 +1497,7 @@
 
 
 
-                document.addEventListener("click", function once() {
-                    unlockAudio();
-                    document.removeEventListener("click", once);
-                });
+                /* Removed undefined unlockAudio call */
 
                 /* ---------- Page load updates ---------- */
                 setTimeout(() => { const emp = empInput.value.trim(); if (emp) updateInOutUI(emp); }, 800);
