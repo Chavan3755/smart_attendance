@@ -18,9 +18,70 @@ def fetch_next_15_days_holidays(employee=None):
             else:
                 holiday_list = None
 
-        if not holiday_list:
-            # Fallback to any holiday list
-            holiday_list = frappe.db.get_value("Holiday List", {"is_default": 1}, "name")
+            # 1. Fallback to Shift Assignment
+            if employee:
+                # Find active shift assignment for today
+                shift_assignment = frappe.db.get_value("Shift Assignment", {
+                    "employee": employee,
+                    "status": "Active",
+                    "start_date": ["<=", start_date],
+                    # end_date can be None (ongoing) or >= today
+                    # Complex queries might need get_all, but let's try a simpler approach first or use SQL if needed for OR
+                    # For simplicity in get_value, we might miss the OR condition for end_date.
+                    # Let's use get_all to be safe about the end_date logic (None OR >= today).
+                }, "shift_type")
+                
+                # If get_value didn't work directly due to complex end_date, let's try a better query if needed. 
+                # Actually, let's use a robust query for shift assignment.
+                if not shift_assignment:
+                     # Check if there is any assignment valid for today
+                     sas = frappe.get_all("Shift Assignment",
+                        filters=[
+                            ["employee", "=", employee],
+                            ["status", "=", "Active"],
+                            ["start_date", "<=", start_date],
+                            ["end_date", "in", [None, ""]], # Open ended
+                        ],
+                        fields=["shift_type"],
+                        limit=1
+                     )
+                     if not sas:
+                         sas = frappe.get_all("Shift Assignment",
+                            filters=[
+                                ["employee", "=", employee],
+                                ["status", "=", "Active"],
+                                ["start_date", "<=", start_date],
+                                ["end_date", ">=", start_date],
+                            ],
+                            fields=["shift_type"],
+                            limit=1
+                         )
+                     
+                     if sas:
+                         shift_assignment = sas[0].shift_type
+
+                if shift_assignment:
+                    holiday_list = frappe.db.get_value("Shift Type", shift_assignment, "holiday_list")
+
+            # 2. Fallback to Company default
+            if not holiday_list:
+                company = None
+                if employee:
+                    company = frappe.db.get_value("Employee", employee, "company")
+                if not company:
+                    company = frappe.defaults.get_user_default("Company")
+                
+                if company:
+                    holiday_list = frappe.db.get_value("Company", company, "default_holiday_list")
+
+            # 3. Gloabl Settings
+            if not holiday_list:
+                 if frappe.db.exists("DocType", "Attendance Manager Settings"):
+                     holiday_list = frappe.db.get_single_value("Attendance Manager Settings", "default_holiday_list")
+            
+            # 4. Last resort: ANY holiday list (optional, but maybe better to show nothing than wrong info)
+            # if not holiday_list:
+            #    pass
 
         if not holiday_list:
              return {"holidays": []}
