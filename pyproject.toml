@@ -10,11 +10,7 @@ dynamic = ["version"]
 dependencies = [
     "requests",
     "face_recognition",
-    "deepface",
-    "tf-keras",
-    "torch",
-    "opencv-python",
-    "numpy<2.0.0"
+    "opencv-python"
 ]
 
 [project.optional-dependencies]
