@@ -45,8 +45,8 @@ def mark_kiosk_attendance(employee_id, log_type=None):
             now_dt = now_datetime()
             diff = (now_dt - last_dt).total_seconds()
             
-            if diff < 30:
-                return {"ok": False, "message": f"Please wait {int(30 - diff)}s before next check-in."}
+            if diff < 60:
+                return {"ok": False, "message": f"Please wait {int(60 - diff)}s before next check-in."}
 
         # TRACE 3
         frappe.log_error("TRACE 3: Pre-LogType", "Kiosk Trace")

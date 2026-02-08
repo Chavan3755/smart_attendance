@@ -10,8 +10,10 @@ dynamic = ["version"]
 dependencies = [
     "requests",
     "face_recognition",
-    "opencv-python",
-    "cmake"
+    "opencv-python-headless",
+    "numpy",
+    "cmake",
+    "Pillow"
 ]
 
 [project.optional-dependencies]

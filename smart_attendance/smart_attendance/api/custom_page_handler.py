@@ -1,7 +1,7 @@
 import frappe 
 @frappe.whitelist(allow_guest=True)
 def get_kiosk_settings():
-    s = frappe.get_single("Smart Attendance Settings")
+    s = frappe.get_doc("Smart Attendance Settings", "Smart Attendance Settings", ignore_permissions=True)
 
     return {
         "settings": {

@@ -839,7 +839,6 @@
 
                 /* ---------- FETCH WRAPPER (REPLACES frappe.call) ---------- */
                 async function callURL(method, args = {}) {
-                    // Build query params
                     const params = new URLSearchParams();
                     for (const [key, value] of Object.entries(args)) {
                         params.append(key, value);
@@ -847,12 +846,18 @@
 
                     try {
                         const res = await fetch(`/api/method/${method}?${params.toString()}`, {
-                            method: 'GET', // or POST if needed, but GET is simpler for reads
+                            method: 'GET',
                             headers: {
-                                'Accept': 'application/json',
-                                'X-Frappe-CSRF-Token': frappe.csrf_token || ''
+                                'Accept': 'application/json'
+                                // Removed CSRF for GET to avoid 417 errors on Guest
                             }
                         });
+
+                        if (!res.ok) {
+                            console.error(`API ${method} failed with status ${res.status}`);
+                            return { message: null };
+                        }
+
                         const data = await res.json();
                         return data;
                     } catch (e) {
@@ -876,6 +881,12 @@
                             },
                             body: formData
                         });
+
+                        if (!res.ok) {
+                            console.error(`API ${method} failed with status ${res.status}`);
+                            return { message: null };
+                        }
+
                         const data = await res.json();
                         return data;
                     } catch (e) {
@@ -986,7 +997,27 @@
                 window.addEventListener('mousemove', onMove); kioskCard.addEventListener('mouseleave', onLeave);
 
                 /* ---------- Camera ---------- */
-                async function startCamera() { try { const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false }); camera.srcObject = stream; await camera.play(); resizeOverlay(); logDebug('Camera started'); } catch (e) { show3DNotify('error', 'Camera error'); logDebug('Camera error: ' + (e.message || e)); } }
+                /* ---------- Camera ---------- */
+                async function startCamera() {
+                    try {
+                        const constraints = {
+                            video: {
+                                facingMode: 'user',
+                                width: { ideal: 1280 },
+                                height: { ideal: 720 }
+                            },
+                            audio: false
+                        };
+                        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                        camera.srcObject = stream;
+                        await camera.play();
+                        resizeOverlay();
+                        logDebug('Camera started (Mobile Friendly)');
+                    } catch (e) {
+                        show3DNotify('error', 'Camera error');
+                        logDebug('Camera error: ' + (e.message || e));
+                    }
+                }
                 startCamera();
                 function resizeOverlay() { const rect = camera.getBoundingClientRect(); bboxCanvas.width = rect.width * devicePixelRatio; bboxCanvas.height = rect.height * devicePixelRatio; bboxCanvas.style.width = rect.width + 'px'; bboxCanvas.style.height = rect.height + 'px'; bboxCtx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0); }
                 window.addEventListener('resize', resizeOverlay);
@@ -1020,7 +1051,6 @@
                     // Stop execution of further logic that depends on faceapi
                     return;
                 }
-
                 // ---------- AI helpers ----------
                 let stableSince = null;
                 let detecting = true;
@@ -1029,6 +1059,10 @@
                 let blinkCount = 0;
                 let eyeClosed = false;
                 let lastBlinkTime = 0;
+
+                // ✅ START DETECTION LOOP
+                console.log("Starting detectionLoop...");
+                detectionLoop();
 
                 function getEAR(eye) {
                     const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
@@ -1058,6 +1092,7 @@
                             hint.style.display = "block";
                             hint.innerText = "Align your face inside the box";
                             stableSince = null;
+                            blinkCount = 0; // ✅ Reset blink if face lost
                             // Reset blink on face loss? Optional. 
                             // Let's reset if face is gone for > 2 seconds to prevent "pre-blinking"
                             requestAnimationFrame(detectionLoop);
@@ -1088,31 +1123,38 @@
                         // logDebug(`EAR: ${avgEAR.toFixed(3)} | Blinks: ${blinkCount}`);
 
                         // Thresholds
-                        const CLOSED_THRESH = 0.22; // Slightly stricter than 0.26
+                        const CLOSED_THRESH = 0.23; // Relaxed from 0.25 to matches user's script
                         const OPEN_THRESH = 0.35;
 
-                        if (avgEAR < CLOSED_THRESH) {
+                        if (avgEAR < CLOSED_THRESH && !eyeClosed) {
+                            // Edge trigger: transition open -> closed
                             eyeClosed = true;
-                        } else if (avgEAR > OPEN_THRESH && eyeClosed) {
-                            // Transition Closed -> Open = Blink
                             blinkCount++;
-                            eyeClosed = false;
                             lastBlinkTime = Date.now();
                             show3DNotify('in', '😉 Blink Verified!');
+                        } else if (avgEAR > OPEN_THRESH) {
+                            eyeClosed = false;
                         }
+
+                        // Stable Face Logic
+                        if (!stableSince) {
+                            stableSince = Date.now();
+                        }
+
+                        const msStable = Date.now() - stableSince;
 
                         // Hint Logic
                         hint.style.display = "block";
                         if (blinkCount === 0) {
                             hint.innerText = "😉 Please BLINK to Verify";
-                            hint.style.color = "#fbbf24"; // warning color
+                            hint.style.color = "#fbbf24";
                             hint.style.border = "1px solid #fbbf24";
                         } else {
-                            hint.innerText = "✅ Face Verified";
-                            hint.style.color = "#4ade80"; // success color
+                            hint.innerText = "✅ Blink Verified";
+                            hint.style.color = "#4ade80";
                             hint.style.border = "1px solid #4ade80";
 
-                            // 🧠 Trigger Auto Capture if Blinked
+                            // 🧠 Trigger Auto Capture ONLY if Blinked
                             if (feature_autocapture.checked) {
                                 handleAutoCapture(face);
                             }
@@ -1185,14 +1227,16 @@
                     // Update Title
                     document.querySelector('#dailyLogsModal .modal-title').innerText = `Daily Logs: ${employee_id}`;
 
-                    // Fetch logs
+                    // Fetch logs (FIXED DATE)
                     try {
+                        const todayDate = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+
                         const logsData = await callURL("frappe.client.get_list", {
                             doctype: "Employee Checkin",
                             filters: JSON.stringify([
                                 ["employee", "=", employee_id],
-                                ["time", ">=", frappe.datetime.get_today() + " 00:00:00"],
-                                ["time", "<=", frappe.datetime.get_today() + " 23:59:59"]
+                                ["time", ">=", todayDate + " 00:00:00"],
+                                ["time", "<=", todayDate + " 23:59:59"]
                             ]),
                             fields: JSON.stringify(["name", "log_type", "time", "employee_name"]),
                             order_by: "time desc",
@@ -1313,9 +1357,19 @@
                             document.getElementById('employee_id').value = detectedId;
 
                             updateInOutUI(detectedId);
-                            setTimeout(() => fetchAndShowDailyLogs(detectedId), 800);
+                            setTimeout(() => {
+                                fetchAndShowDailyLogs(detectedId);
+                                blinkCount = 0; // ✅ Reset blink after success logic finishes
+                            }, 800);
                         } else {
-                            show3DNotify('error', r.message?.message || '❌ Attendance Failed');
+                            const msg = r.message?.message || '❌ Attendance Failed';
+                            const reason = r.message?.reason;
+
+                            if (reason === 'spoofing_detected') {
+                                show3DNotify('error', '🛡️ Spoofing Detected! Please use a real face.');
+                            } else {
+                                show3DNotify('error', msg);
+                            }
                         }
 
                     } catch (e) {
@@ -1363,11 +1417,12 @@
                 let lastAutoCaptureAt = 0;
                 async function handleAutoCapture(detection) {
                     const now = Date.now();
-                    if (now - lastAutoCaptureAt < 2800) return;
+                    // Speed up retries to 1.5s instead of 2.8s if capture is struggling
+                    if (now - lastAutoCaptureAt < 1500) return;
                     lastAutoCaptureAt = now;
                     await prepareCaptureCanvas();
                     ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
-                    const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
                     imgPreview.src = dataUrl;
                     imgPreview.classList.remove('hidden');
                     const emp = empInput.value.trim();
@@ -1386,14 +1441,13 @@
                 /* ---------- Button bindings ---------- */
                 /* ---------- Button bindings ---------- */
                 captureBtn.addEventListener('click', async () => {
-                    if (blinkCount === 0) {
-                        show3DNotify('error', 'Please BLINK to verify liveness first!');
-                        return;
-                    }
+                    // Removed mandatory blink check for manual button
+                    // if (blinkCount === 0) { ... }
+
                     const emp = empInput.value.trim();
 
                     ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
-                    const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
                     imgPreview.src = dataUrl;
                     imgPreview.classList.remove('hidden');
 
@@ -1402,10 +1456,7 @@
                 });
 
                 inoutBtn.addEventListener('click', async () => {
-                    if (blinkCount === 0) {
-                        show3DNotify('error', 'Please BLINK to verify liveness first!');
-                        return;
-                    }
+                    // Removed mandatory blink check for manual button
                     const emp = empInput.value.trim();
                     // For manual IN/OUT without capture, we might still want an image or at least ID.
                     // If no ID, we MUST capture.

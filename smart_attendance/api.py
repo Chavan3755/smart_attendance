@@ -11,7 +11,7 @@ def fetch_next_15_days_holidays(employee=None):
     # uyfyfsdyufsdyusdafuysdafdyusaf
     try:
         if employee:
-            holiday_list = frappe.db.get_value("Employee", employee, "holiday_list")
+            holiday_list = frappe.db.get_value("Employee", employee, "holiday_list", ignore_permissions=True)
         else:
             # Safely check for settings
             if frappe.db.exists("DocType", "Attendance Manager Settings"):
@@ -96,7 +96,8 @@ def fetch_next_15_days_holidays(employee=None):
                 "holiday_date": ["between", [start_date, end_date]]
             },
             fields=["holiday_date", "description"],
-            order_by="holiday_date asc"
+            order_by="holiday_date asc",
+            ignore_permissions=True
         )
         
         # Format for frontend
