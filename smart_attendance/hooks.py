@@ -87,7 +87,7 @@ website_route_rules = [
 # Installation
 # ------------
 
-# before_install = "smart_attendance.install.before_install"
+before_install = "smart_attendance.install.dependency.before_install"
 # after_install = "smart_attendance.install.after_install"
 
 # Uninstallation
