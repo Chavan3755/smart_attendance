@@ -16,6 +16,17 @@
         }
         window.dev_server = false;
         window.socketio_port = 9000;
+
+        // Mobile detection - add class to body immediately
+        (function () {
+            const isMobile = window.innerWidth <= 900 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            if (isMobile) {
+                document.addEventListener('DOMContentLoaded', function () {
+                    document.body.classList.add('is-mobile');
+                    console.log('Mobile detected, added is-mobile class');
+                });
+            }
+        })();
     </script>
 </head>
 
@@ -90,12 +101,208 @@
                 font-family: Inter, Arial, sans-serif;
             }
 
+            /* Full-screen mode on mobile */
+            @media (max-width: 900px) {
+                body {
+                    overflow: hidden;
+                }
+
+                .page {
+                    padding: 0 !important;
+                    margin: 0 !important;
+                    height: 100vh;
+                    display: flex;
+                    align-items: stretch;
+                }
+
+                .viewport {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    height: 100vh;
+                    display: flex;
+                    flex-direction: column;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                }
+
+                .outer {
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    border-radius: 0 !important;
+                    padding: 0 !important;
+                    margin: 0 !important;
+                    box-shadow: none !important;
+                    border: none !important;
+                    background: transparent !important;
+                }
+
+                .card {
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    border-radius: 0 !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    background: transparent !important;
+                    box-shadow: none !important;
+                    border: none !important;
+                }
+
+                /* Hide header on mobile */
+                .header {
+                    display: none !important;
+                }
+
+                .layout {
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    gap: 0 !important;
+                }
+
+                .left {
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                }
+
+                .camera {
+                    flex: 1;
+                    height: auto !important;
+                    margin: 0 !important;
+                    border-radius: 0 !important;
+                }
+
+                .camera-inner {
+                    border-radius: 0 !important;
+                    inset: 0 !important;
+                }
+
+                /* Make controls fixed at bottom */
+                .controls {
+                    position: fixed;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    margin: 0 !important;
+                    padding: 20px;
+                    background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 70%, transparent 100%);
+                    z-index: 100;
+                }
+
+                #inout_btn {
+                    width: 100%;
+                    padding: 18px;
+                    font-size: 20px;
+                    font-weight: 700;
+                }
+            }
+
 
             /* Layout */
             .page {
                 display: flex;
                 justify-content: center;
                 padding: 40px 12px;
+            }
+
+            /* Class-based mobile rules (in addition to media query) */
+            body.is-mobile {
+                overflow: hidden !important;
+            }
+
+            body.is-mobile .page {
+                padding: 0 !important;
+                margin: 0 !important;
+                height: 100vh !important;
+            }
+
+            body.is-mobile .viewport {
+                width: 100% !important;
+                max-width: 100% !important;
+                height: 100vh !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+
+            body.is-mobile .outer {
+                border-radius: 0 !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+                background: transparent !important;
+            }
+
+            body.is-mobile .card {
+                border-radius: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: transparent !important;
+                box-shadow: none !important;
+                border: none !important;
+            }
+
+            body.is-mobile .header {
+                display: none !important;
+            }
+
+            body.is-mobile .layout {
+                margin: 0 !important;
+                padding: 0 !important;
+                gap: 0 !important;
+                grid-template-columns: 1fr !important;
+            }
+
+            body.is-mobile .left {
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+
+            body.is-mobile .camera {
+                height: auto !important;
+                min-height: calc(100vh - 100px) !important;
+                margin: 0 !important;
+                border-radius: 0 !important;
+            }
+
+            body.is-mobile .camera-inner {
+                border-radius: 0 !important;
+                inset: 0 !important;
+            }
+
+            body.is-mobile .controls {
+                position: fixed !important;
+                bottom: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                margin: 0 !important;
+                padding: 20px !important;
+                background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 70%, transparent 100%) !important;
+                z-index: 100 !important;
+            }
+
+            body.is-mobile #inout_btn {
+                width: 100% !important;
+                padding: 18px !important;
+                font-size: 20px !important;
+                font-weight: 700 !important;
+            }
+
+            body.is-mobile .field,
+            body.is-mobile .mobile-hide {
+                display: none !important;
+                visibility: hidden !important;
+                height: 0 !important;
+            }
+
+            body.is-mobile .right {
+                display: none !important;
             }
 
             .viewport {
@@ -160,6 +367,25 @@
                 text-align: left;
             }
 
+            /* Hide employee ID field on mobile */
+            @media (max-width: 900px) {
+                .field {
+                    display: none !important;
+                    visibility: hidden !important;
+                    height: 0 !important;
+                    overflow: hidden !important;
+                }
+
+                .mobile-hide {
+                    display: none !important;
+                    visibility: hidden !important;
+                    height: 0 !important;
+                    overflow: hidden !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                }
+            }
+
             .label {
                 display: block;
                 font-size: 13px;
@@ -182,7 +408,8 @@
                 position: relative;
                 border-radius: 10px;
                 overflow: hidden;
-                height: 360px;
+                height: 55vh;
+                min-height: 480px;
                 background: linear-gradient(180deg, rgba(3, 7, 14, 0.65), rgba(2, 6, 12, 0.82));
                 border: 1px solid rgba(255, 255, 255, 0.02);
             }
@@ -267,20 +494,14 @@
 
             #capture-btn {
                 display: none !important;
-                /* Fully hidden, auto-capture only */
-                background: #f97316;
-                border: none;
-                color: white;
-                padding: 14px 24px;
-                border-radius: 8px;
-                font-size: 16px;
-                font-weight: 600;
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                box-shadow: 0 4px 6px -1px rgba(249, 115, 22, 0.4);
-                transition: all 0.2s;
+            }
+
+            #preview_toggle {
+                display: none !important;
+            }
+
+            .img-preview {
+                display: none !important;
             }
 
             .badge {
@@ -394,7 +615,8 @@
 
             @media (max-width:900px) {
                 .viewport {
-                    width: 96%;
+                    width: 100% !important;
+                    max-width: 100% !important;
                 }
 
                 .layout {
@@ -402,7 +624,17 @@
                 }
 
                 .camera {
-                    height: 260px;
+                    height: auto !important;
+                }
+
+                /* Hide subtitle on mobile */
+                .subtitle {
+                    display: none !important;
+                }
+
+                /* Hide title on mobile */
+                .title {
+                    display: none !important;
                 }
             }
 
@@ -512,14 +744,16 @@
                 margin-bottom: 8px;
             }
 
-            /* 🔒 Hide all right panels by default */
+            /* 🔒 Hide all right panels including holidays */
             .right .panel {
                 display: none !important;
             }
 
-            /* ✅ Show ONLY Holidays panel */
-            .right .holidays-panel {
-                display: block !important;
+            /* Hide holidays panel on mobile */
+            @media (max-width: 900px) {
+                .right {
+                    display: none !important;
+                }
             }
         </style>
 
@@ -528,104 +762,259 @@
             .modal-overlay {
                 position: fixed;
                 inset: 0;
-                background: rgba(0, 0, 0, 0.6);
+                background: rgba(0, 0, 0, 0.85);
                 backdrop-filter: blur(8px);
                 z-index: 10000;
                 display: flex;
-                align-items: center;
+                align-items: flex-end;
                 justify-content: center;
                 opacity: 0;
                 pointer-events: none;
                 transition: opacity 0.3s ease;
             }
 
+            /* Prevent modal from closing on outside click */
             .modal-overlay.active {
+                pointer-events: auto;
                 opacity: 1;
+            }
+
+            .modal-overlay.active .modal-content {
                 pointer-events: auto;
             }
 
             .modal-content {
-                background: #0f1724;
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                width: 400px;
-                max-width: 90%;
-                border-radius: 16px;
+                background: linear-gradient(180deg, rgba(15, 23, 36, 0.95), rgba(7, 16, 41, 0.98));
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                width: 100%;
+                max-width: 100%;
+                border-radius: 20px 20px 0 0;
                 padding: 24px;
                 text-align: center;
-                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-                transform: scale(0.9);
+                box-shadow: 0 -10px 50px rgba(0, 0, 0, 0.6);
+                transform: translateY(100%);
                 transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+                max-height: 75vh;
+                overflow-y: auto;
+                backdrop-filter: blur(12px);
             }
 
             .modal-overlay.active .modal-content {
-                transform: scale(1);
+                transform: translateY(0);
             }
 
             .modal-title {
                 font-size: 18px;
                 font-weight: 700;
                 color: #fff;
-                margin-bottom: 16px;
+                margin-bottom: 20px;
+                letter-spacing: -0.5px;
             }
 
             .modal-logs {
-                background: rgba(255, 255, 255, 0.03);
-                border-radius: 12px;
-                max-height: 240px;
+                background: rgba(255, 255, 255, 0.02);
+                border-radius: 16px;
+                max-height: 280px;
                 overflow-y: auto;
                 text-align: left;
                 margin-bottom: 20px;
-                border: 1px solid rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.04);
+                padding: 4px;
             }
 
             .modal-log-item {
-                padding: 10px 14px;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                padding: 12px 14px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.04);
                 font-size: 14px;
                 display: flex;
                 justify-content: space-between;
+                align-items: center;
                 color: #cbd5e1;
+                background: transparent;
+                margin: 2px;
+                border-radius: 10px;
+                transition: background 0.2s;
             }
 
             .modal-log-item:last-child {
                 border-bottom: none;
             }
 
+            .modal-log-item:hover {
+                background: rgba(255, 255, 255, 0.03);
+            }
+
             .modal-log-item span.in {
-                color: #4ade80;
-                font-weight: 600;
+                color: #fff;
+                font-weight: 700;
+                background: linear-gradient(90deg, #10b981, #06b6d4);
+                padding: 4px 10px;
+                border-radius: 8px;
+                font-size: 12px;
+                box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
             }
 
             .modal-log-item span.out {
-                color: #f87171;
-                font-weight: 600;
+                color: #fff;
+                font-weight: 700;
+                background: linear-gradient(90deg, #f59e0b, #ea580c);
+                padding: 4px 10px;
+                border-radius: 8px;
+                font-size: 12px;
+                box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
             }
 
             .modal-btn {
-                background: #fff;
-                color: #0f1724;
+                background: linear-gradient(90deg, #7c3aed, #06b6d4);
+                color: #fff;
                 border: none;
-                padding: 12px 32px;
+                padding: 14px 32px;
                 font-size: 16px;
-                font-weight: 600;
+                font-weight: 700;
                 border-radius: 12px;
                 cursor: pointer;
-                transition: opacity 0.2s;
+                transition: opacity 0.2s, transform 0.2s;
                 width: 100%;
+                box-shadow: 0 8px 24px rgba(124, 58, 237, 0.3);
             }
 
             .modal-btn:hover {
-                opacity: 0.9;
+                transform: translateY(-2px);
+                box-shadow: 0 12px 32px rgba(124, 58, 237, 0.4);
+            }
+
+            /* Fullscreen toggle button */
+            .fullscreen-toggle {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                width: 48px;
+                height: 48px;
+                border-radius: 50%;
+                background: rgba(0, 0, 0, 0.6);
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: white;
+                font-size: 24px;
+                cursor: pointer;
+                z-index: 1000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.3s;
+            }
+
+            .fullscreen-toggle:hover {
+                background: rgba(0, 0, 0, 0.8);
+                transform: scale(1.1);
+            }
+
+            body.is-mobile .fullscreen-toggle {
+                display: flex;
+            }
+
+            /* Half-screen mode */
+            body.half-screen .camera {
+                min-height: 75vh !important;
+                height: 75vh !important;
+                padding-bottom: 80px;
+            }
+
+            body.is-mobile.half-screen .right {
+                display: block !important;
+                height: 25vh;
+                overflow-y: auto;
+                padding-bottom: 20px;
+                /* Space for fixed controls */
+                background: var(--bg-1);
+            }
+
+            body.is-mobile.half-screen .right .panel {
+                display: block !important;
+                margin: 12px;
+            }
+
+            .modal-holidays {
+                background: rgba(255, 255, 255, 0.03);
+                border-radius: 12px;
+                padding: 12px;
+                margin-bottom: 16px;
+                text-align: left;
+                border: 1px solid rgba(255, 255, 255, 0.05);
+            }
+
+            .modal-holidays h4 {
+                margin: 0 0 10px 0;
+                font-size: 14px;
+                color: #94a3b8;
+            }
+
+            .modal-holiday-item {
+                padding: 8px 0;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                font-size: 13px;
+                color: #cbd5e1;
+            }
+
+            .modal-holiday-item:last-child {
+                border-bottom: none;
+            }
+
+            .calendar-icon-dynamic {
+                width: 64px;
+                height: 64px;
+                background: #f1f5f9;
+                border-radius: 12px;
+                overflow: hidden;
+                margin: 0 auto 12px auto;
+                box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+
+            .cal-top {
+                background: linear-gradient(135deg, #ef4444, #b91c1c);
+                color: #fff;
+                font-size: 11px;
+                font-weight: 700;
+                padding: 5px 0;
+                text-align: center;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }
+
+            .cal-body {
+                color: #1e293b;
+                font-size: 26px;
+                font-weight: 800;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 40px;
+                background: #fff;
             }
         </style>
 
         <div id="notify3d" class="hidden"></div>
 
+        <!-- Fullscreen Toggle Button -->
+        <button id="fullscreenToggle" class="fullscreen-toggle" title="Toggle Fullscreen">
+            <span id="fullscreenIcon">⛶</span>
+        </button>
+
         <!-- Daily Logs Modal HTML -->
         <div id="dailyLogsModal" class="modal-overlay">
             <div class="modal-content">
                 <div class="modal-title">Daily Check-ins</div>
+
+                <!-- Holidays Section -->
+                <div id="modalHolidays" class="modal-holidays" style="display:none;">
+                    <h4>📅 Upcoming Holidays</h4>
+                    <div id="modalHolidaysList"></div>
+                </div>
+
+                <!-- Logs Section -->
                 <div id="modalLogsList" class="modal-logs"></div>
+
                 <button id="modalOkBtn" class="modal-btn">OK</button>
             </div>
         </div>
@@ -656,7 +1045,7 @@
                         <div class="layout">
                             <!-- LEFT: Camera + Controls -->
                             <div class="left">
-                                <div class="field">
+                                <div class="field mobile-hide">
                                     <label class="label">Employee ID</label>
                                     <input id="employee_id" class="input" type="text" value="" autocomplete="off"
                                         readonly />
@@ -698,12 +1087,13 @@
 
                                 <div class="controls">
                                     <button id="inout_btn" class="in-btn">✅ IN</button>
-                                    <button id="capture_btn" class="capture-btn">📸 Capture & Mark</button>
-                                    <button id="preview_toggle" class="small-btn">Preview</button>
+                                    <button id="capture_btn" class="capture-btn" style="display:none;">📸 Capture &
+                                        Mark</button>
+                                    <button id="preview_toggle" class="small-btn" style="display:none;">Preview</button>
                                 </div>
 
                                 <img id="imgPreview" class="img-preview hidden"
-                                    style="max-width:100%; margin-top:10px; border-radius:8px;" />
+                                    style="display:none; max-width:100%; margin-top:10px; border-radius:8px;" />
 
                                 <div id="resultBox" class="result hidden">
                                     <div id="resultLeft"></div>
@@ -1114,50 +1504,23 @@
                         const leftEye = landmarks.getLeftEye();
                         const rightEye = landmarks.getRightEye();
 
-                        // Calculate EAR
-                        const leftEAR = getEAR(leftEye);
-                        const rightEAR = getEAR(rightEye);
-                        const avgEAR = (leftEAR + rightEAR) / 2.0;
+                        // Remove all blink detection code
+                        // Employees were frustrated with blink requirement
 
-                        // Debug EAR
-                        // logDebug(`EAR: ${avgEAR.toFixed(3)} | Blinks: ${blinkCount}`);
-
-                        // Thresholds
-                        const CLOSED_THRESH = 0.23; // Relaxed from 0.25 to matches user's script
-                        const OPEN_THRESH = 0.35;
-
-                        if (avgEAR < CLOSED_THRESH && !eyeClosed) {
-                            // Edge trigger: transition open -> closed
-                            eyeClosed = true;
-                            blinkCount++;
-                            lastBlinkTime = Date.now();
-                            show3DNotify('in', '😉 Blink Verified!');
-                        } else if (avgEAR > OPEN_THRESH) {
-                            eyeClosed = false;
-                        }
-
-                        // Stable Face Logic
                         if (!stableSince) {
                             stableSince = Date.now();
                         }
 
                         const msStable = Date.now() - stableSince;
 
-                        // Hint Logic
-                        hint.style.display = "block";
-                        if (blinkCount === 0) {
-                            hint.innerText = "😉 Please BLINK to Verify";
-                            hint.style.color = "#fbbf24";
-                            hint.style.border = "1px solid #fbbf24";
-                        } else {
-                            hint.innerText = "✅ Blink Verified";
-                            hint.style.color = "#4ade80";
-                            hint.style.border = "1px solid #4ade80";
+                        // Hint Logic - Auto capture without blink requirement
+                        hint.innerText = "✅ Face Detected";
+                        hint.style.color = "#4ade80";
+                        hint.style.border = "1px solid #4ade80";
 
-                            // 🧠 Trigger Auto Capture ONLY if Blinked
-                            if (feature_autocapture.checked) {
-                                handleAutoCapture(face);
-                            }
+                        // 🧠 Trigger Auto Capture immediately when face is stable
+                        if (feature_autocapture.checked && msStable > 500) {
+                            handleAutoCapture(face);
                         }
 
                     } catch (e) {
@@ -1227,48 +1590,116 @@
                     // Update Title
                     document.querySelector('#dailyLogsModal .modal-title').innerText = `Daily Logs: ${employee_id}`;
 
-                    // Fetch logs (FIXED DATE)
+                    // Fetch logs (Using new server-side Guest-friendly API)
                     try {
-                        const todayDate = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+                        const ts = new Date().getTime();
+                        console.log("[KIOSK] Requesting logs for:", employee_id, "at", ts);
 
-                        const logsData = await callURL("frappe.client.get_list", {
-                            doctype: "Employee Checkin",
-                            filters: JSON.stringify([
-                                ["employee", "=", employee_id],
-                                ["time", ">=", todayDate + " 00:00:00"],
-                                ["time", "<=", todayDate + " 23:59:59"]
-                            ]),
-                            fields: JSON.stringify(["name", "log_type", "time", "employee_name"]),
-                            order_by: "time desc",
-                            limit_page_length: 100
+                        const logsData = await callURL("smart_attendance.api.get_today_logs", {
+                            employee: employee_id,
+                            _t: ts
                         });
                         const logs = logsData.message || [];
+                        console.log("[KIOSK] Server response:", logs.length, "items detected.");
 
+                        // 1. Populate MODAL list
                         const list = document.getElementById('modalLogsList');
                         list.innerHTML = '';
 
                         if (logs.length === 0) {
-                            list.innerHTML = '<div style="padding:14px; text-align:center; color:#64748b;">No logs found today</div>';
+                            list.innerHTML = `
+                                <div style="padding:24px; text-align:center; background:rgba(255,255,255,0.02); border-radius:12px; margin:10px;">
+                                    <div class="calendar-icon-dynamic">
+                                        <div class="cal-top">${new Date().toLocaleString('default', { month: 'short' }).toUpperCase()}</div>
+                                        <div class="cal-body">${new Date().getDate()}</div>
+                                    </div>
+                                    <div style="color:#94a3b8; font-size:14px;">No logs found for <b>${employee_id}</b> today</div>
+                                    <div style="font-size:11px; color:#64748b; margin-top:8px;">Server Date: ${new Date().toLocaleDateString()}</div>
+                                </div>
+                            `;
                             document.querySelector('#dailyLogsModal .modal-title').innerText = `Daily Logs (0)`;
                         } else {
-                            // Update title with Name and Count
-                            const count = logs.length;
+                            // Update title
                             const name = logs[0].employee_name || employee_id;
-                            document.querySelector('#dailyLogsModal .modal-title').innerText = `Daily Logs (${count}): ${name}`;
+                            document.querySelector('#dailyLogsModal .modal-title').innerText = `Logs: ${name}`;
 
-                            logs.forEach(l => {
-                                const time = l.time.split(' ')[1].substring(0, 5); // HH:mm
-                                const typeClass = l.log_type === 'IN' ? 'in' : 'out';
-                                list.innerHTML += `
-                    <div class="modal-log-item">
-                        <div style="flex:1; text-align:left;">
-                            <div style="font-weight:600; font-size:15px; color:#fff;">${time}</div>
-                            <div style="font-size:11px; color:#64748b;">${l.name}</div>
-                        </div>
-                        <span class="${typeClass}" style="font-size:15px; align-self:center;">${l.log_type}</span>
-                    </div>
-                `;
+                            // Separate by today/previous
+                            const todayLogs = logs.filter(l => l.is_today);
+                            const otherLogs = logs.filter(l => !l.is_today);
+
+                            // Render Sections
+                            if (todayLogs.length > 0) {
+                                list.innerHTML += '<div style="color:#7c3aed; font-size:11px; text-transform:uppercase; font-weight:800; text-align:left; margin:10px 0 5px 5px; letter-spacing:1px;">Today</div>';
+                                renderLogItems(todayLogs, list);
+                            }
+
+                            if (otherLogs.length > 0) {
+                                const header = todayLogs.length > 0 ? 'Previously' : 'Recent History';
+                                list.innerHTML += `<div style="color:#64748b; font-size:11px; text-transform:uppercase; font-weight:800; text-align:left; margin:20px 0 5px 5px; letter-spacing:1px;">${header}</div>`;
+                                renderLogItems(otherLogs, list);
+                            }
+                        }
+
+                        function renderLogItems(items, container) {
+                            items.forEach(l => {
+                                try {
+                                    let timeDisplay = "??:??";
+                                    let dateDisplay = "";
+                                    if (l.time) {
+                                        const tMatch = l.time.match(/(\d{2}):(\d{2})/);
+                                        if (tMatch) timeDisplay = tMatch[0];
+                                        if (!l.is_today) {
+                                            const dMatch = l.time.match(/(\d{4}-\d{2}-\d{2})/);
+                                            if (dMatch) dateDisplay = dMatch[0];
+                                        }
+                                    }
+                                    const typeClass = l.log_type === 'IN' ? 'in' : 'out';
+                                    container.innerHTML += `
+                                        <div class="modal-log-item" style="${!l.is_today ? 'opacity:0.75;' : ''}">
+                                            <div style="flex:1; text-align:left;">
+                                                <div style="font-weight:700; font-size:16px; color:#fff; display:flex; align-items:center; gap:8px;">
+                                                    <span style="opacity:0.9;">${timeDisplay}</span>
+                                                </div>
+                                                <div style="font-size:12px; color:#94a3b8; margin-top:2px;">
+                                                    ${l.name} ${dateDisplay ? ' | ' + dateDisplay : ''}
+                                                </div>
+                                            </div>
+                                            <span class="${typeClass}">${l.log_type}</span>
+                                        </div>
+                                    `;
+                                } catch (e) {
+                                    console.error("[KIOSK] Render Error:", e);
+                                }
                             });
+                        }
+
+                        // Update Main Panel Holidays as well!
+                        loadNext15DaysHolidays(employee_id);
+
+                        // Fetch and display holidays
+                        try {
+                            const holidayData = await callURL("smart_attendance.api.fetch_next_15_days_holidays", { employee: employee_id });
+                            const holidays = holidayData.message?.holidays || [];
+
+                            const holidaySection = document.getElementById('modalHolidays');
+                            const holidayList = document.getElementById('modalHolidaysList');
+
+                            if (holidays.length > 0) {
+                                holidaySection.style.display = 'block';
+                                holidayList.innerHTML = '';
+                                holidays.slice(0, 15).forEach(h => {
+                                    holidayList.innerHTML += `
+                                        <div class="modal-holiday-item">
+                                            <strong>${h.date}</strong> - ${h.name}
+                                        </div>
+                                    `;
+                                });
+                            } else {
+                                holidaySection.style.display = 'none';
+                            }
+                        } catch (e) {
+                            console.error("Error fetching holidays", e);
+                            document.getElementById('modalHolidays').style.display = 'none';
                         }
 
                         const modal = document.getElementById('dailyLogsModal');
@@ -1280,7 +1711,8 @@
                         detecting = true;
                     }
 
-                    document.getElementById('modalOkBtn').addEventListener('click', () => {
+                    // Make modal persistent - only close on OK button click
+                    document.getElementById('modalOkBtn').onclick = () => {
                         document.getElementById('dailyLogsModal').classList.remove('active');
 
                         // ✅ Reset for the NEXT person
@@ -1298,7 +1730,7 @@
                             stableSince = null;
                             blinkCount = 0; // Reset liveness
                         }, 600);
-                    });
+                    };
                 } // End fetchAndShowDailyLogs
 
 
@@ -1360,7 +1792,7 @@
                             setTimeout(() => {
                                 fetchAndShowDailyLogs(detectedId);
                                 blinkCount = 0; // ✅ Reset blink after success logic finishes
-                            }, 800);
+                            }, 1000);
                         } else {
                             const msg = r.message?.message || '❌ Attendance Failed';
                             const reason = r.message?.reason;
@@ -1417,8 +1849,8 @@
                 let lastAutoCaptureAt = 0;
                 async function handleAutoCapture(detection) {
                     const now = Date.now();
-                    // Speed up retries to 1.5s instead of 2.8s if capture is struggling
-                    if (now - lastAutoCaptureAt < 1500) return;
+                    // Speed up retries to 800ms for faster check-in
+                    if (now - lastAutoCaptureAt < 800) return;
                     lastAutoCaptureAt = now;
                     await prepareCaptureCanvas();
                     ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
@@ -1575,6 +2007,24 @@
                     }
 
                     setTimeout(resizeOverlay, 600);
+
+                    // Fullscreen toggle functionality
+                    const fullscreenToggle = document.getElementById('fullscreenToggle');
+                    const fullscreenIcon = document.getElementById('fullscreenIcon');
+                    let isFullscreen = true;
+
+                    if (fullscreenToggle) {
+                        fullscreenToggle.addEventListener('click', () => {
+                            isFullscreen = !isFullscreen;
+                            if (isFullscreen) {
+                                document.body.classList.remove('half-screen');
+                                fullscreenIcon.innerText = '⛶';
+                            } else {
+                                document.body.classList.add('half-screen');
+                                fullscreenIcon.innerText = '⛶';
+                            }
+                        });
+                    }
                 }
 
                 if (document.readyState === 'complete') {

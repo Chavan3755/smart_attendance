@@ -1,7 +1,70 @@
-# smart_attendance/smart_attendance/api.py
 import frappe
+from frappe.utils import nowdate, now_datetime, get_datetime, formatdate
 import base64, io, json
 from datetime import datetime, date, timedelta
+
+@frappe.whitelist(allow_guest=True)
+def get_today_logs(employee):
+  
+    if not employee:
+        return []
+
+    # Safe strip
+    emp_id = employee.strip() if employee else ""
+
+    try:
+        # Fetch last 50 logs regardless of date to ensure we catch recent punches
+        # even if there's a timezone skew or date mismatch.
+        logs = frappe.db.sql("""
+            SELECT
+                name,
+                log_type,
+                time,
+                employee_name
+            FROM `tabEmployee Checkin`
+            WHERE TRIM(employee) = %s
+            ORDER BY time DESC
+            LIMIT 50
+        """, (emp_id,), as_dict=True)
+
+        today_str = frappe.utils.nowdate()
+
+        # Mark logs as today dynamically
+        for l in logs:
+            if l.time:
+                # Convert to string date YYYY-MM-DD
+                log_date = str(l.time).split(" ")[0]
+                l["is_today"] = (log_date == today_str)
+            else:
+                l["is_today"] = False
+
+        return logs
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Kiosk API Error")
+        return []
+
+
+@frappe.whitelist(allow_guest=True)
+def get_last_log_type(employee):
+    """Returns the last log type (IN/OUT) for an employee."""
+    if not employee: return "OUT"
+    emp_id = employee.strip()
+    
+    try:
+        last_type = frappe.db.get_value("Employee Checkin", 
+            {"employee": emp_id}, "log_type", 
+            order_by="time desc", ignore_permissions=True)
+            
+        if not last_type:
+            emp_name = frappe.db.get_value("Employee", emp_id, "employee_name", ignore_permissions=True)
+            last_type = frappe.db.get_value("Employee Checkin", 
+                {"employee_name": emp_name}, "log_type", 
+                order_by="time desc", ignore_permissions=True)
+                
+        return last_type or "OUT"
+    except Exception:
+        return "OUT"
 
 @frappe.whitelist(allow_guest=True)
 def fetch_next_15_days_holidays(employee=None):
@@ -110,7 +173,7 @@ def fetch_next_15_days_holidays(employee=None):
 
         return {"holidays": formatted}
     except Exception as e:
-        frappe.log_error(f"Error checking holidays: {str(e)}")
+        pass
         return {"holidays": []}
 
 
@@ -149,7 +212,6 @@ def enroll_face(employee, image_base64):
 def verify_face(device_id=None, device_secret=None, image_base64=None, confidence_threshold=0.6, employee=None, log_type="AUTO"):
     """Kiosk calls this endpoint (POST)."""
     
-    frappe.log_error(f"Verify Face Called: Device={device_id}, Emp={employee}, HasImage={bool(image_base64)}", "Kiosk Debug")
     
     # SCREAM TEST (Temporary Debug)
     # frappe.throw(f"DEBUG: dev={device_id} img={bool(image_base64)}")
@@ -161,7 +223,6 @@ def verify_face(device_id=None, device_secret=None, image_base64=None, confidenc
 
          try:
              # Debug Step 1
-             frappe.log_error("Delegation Step 1: Importing face_verification", "Kiosk Debug")
              frappe.db.commit() # FORCE COMMIT
              
              # Lazy import for safety
