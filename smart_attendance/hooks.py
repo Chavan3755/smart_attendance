@@ -250,4 +250,5 @@ before_request = ["smart_attendance.utils.before_request"]
 ignore_csrf = [
     "smart_attendance.api.verify_face",
     "smart_attendance.api.enroll_face",
+    "smart_attendance.kiosk.verify_face",
 ]

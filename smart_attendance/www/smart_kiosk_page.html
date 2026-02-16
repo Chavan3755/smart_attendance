@@ -1653,6 +1653,19 @@
                 // Close Success
                 document.getElementById('btn-m-success-done').onclick = () => {
                     document.getElementById('m-success-modal').style.display = 'none';
+                    // Force clean state
+                    stableSince = null;
+                    blinkCount = 0;
+                    detecting = true;
+                    // Reset hint
+                    const hint = document.getElementById("camera-hint");
+                    if (hint) {
+                        hint.innerText = "Align your face inside the box";
+                        hint.style.color = "white";
+                        hint.style.border = "1px solid rgba(255,255,255,0.3)";
+                    }
+                    // Hard reload as requested
+                    window.location.reload();
                 };
                 document.getElementById('btn-m-success-close').onclick = () => {
                     document.getElementById('m-success-modal').style.display = 'none';
@@ -1807,6 +1820,12 @@
                 document.getElementById('m-list-content').innerHTML = html;
             }
 
+            function getLocalSQLTime() {
+                const now = new Date();
+                const pad = (n) => String(n).padStart(2, '0');
+                return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+            }
+
             // Update Success Modal styling dynamically based on action
             async function handleAutoCapture(face) {
                 // ... (previous logic existing)
@@ -1830,10 +1849,11 @@
                     // Force device_id to be string "null" if it is actually null/undefined to match backend check
                     const deviceIdPayload = (typeof deviceId !== 'undefined' && deviceId) ? deviceId : "null";
 
-                    const res = await callPost('smart_attendance.smart_attendance.api.verify_face', {
+                    const res = await callPost('smart_attendance.kiosk.verify_face', {
                         image_base64: imageBase64,
                         log_type: logType,
-                        device_id: deviceIdPayload
+                        device_id: deviceIdPayload,
+                        timestamp: getLocalSQLTime()
                     });
 
                     if (!res.ok) {
@@ -1856,7 +1876,23 @@
                         return;
                     }
 
-                    const employeeId = res.employee;
+                    const employeeId = res.message.employee;
+
+                    if (res.message && res.message.ok === false) {
+                        console.warn("Backend Logic Error:", res.message.message);
+                        show3DNotify('error', res.message.message);
+                        detecting = true;
+                        return;
+                    }
+
+                    if (!res.message || !res.message.name) {
+                        console.error("Critical: Backend returned OK but no Checkin Name", res);
+                        show3DNotify('error', "System Error: Attendance not saved.");
+                        detecting = true;
+                        return;
+                    }
+
+                    const checkinId = res.message.name;
 
                     // Hide Scanner (if any overlay, currently background)
                     // No modal to hide for main flow
@@ -1866,11 +1902,13 @@
                         if (mobileCallback) mobileCallback(employeeId);
                     } else {
                         // Success Modal Update
-                        const isCheckIn = (res.log_type === 'IN');
+                        const isCheckIn = (res.message.log_type === 'IN');
                         const color = isCheckIn ? '#10b981' : '#f59e0b';
                         const darkColor = isCheckIn ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)';
                         const title = isCheckIn ? 'Checked In!' : 'Checked Out!';
-                        const msg = `${res.employee_name}, your check-${isCheckIn ? 'in' : 'out'} has been recorded.`;
+                        const empName = res.message.employee_name || res.message.employee || "Employee";
+                        const msg = `${empName}, your check-${isCheckIn ? 'in' : 'out'} has been recorded. [Ref: ${checkinId}]`;
+                        const subMsg = `Ref: ${checkinId}`;
 
                         document.getElementById('m-success-icon-bg').style.background = darkColor;
                         const icon = document.getElementById('m-success-icon');
@@ -1886,7 +1924,18 @@
 
                         document.getElementById('m-success-title').innerText = title;
                         document.getElementById('m-success-msg').innerText = msg;
-                        document.getElementById('m-success-time-lg').innerText = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+                        // Add ID display if element exists, or append to msg
+                        // Checking if we have a specific element for ref? No.
+                        // Let's append to msg for now or create a small div
+                        const existingRef = document.getElementById('m-success-ref');
+                        if (existingRef) {
+                            existingRef.innerText = subMsg;
+                        } else {
+                            // Create it dynamically if needed or just append to time
+                        }
+
+                        document.getElementById('m-success-time-lg').innerText = new Date(res.message.time || new Date()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
                         const btn = document.getElementById('btn-m-success-done');
                         btn.style.background = color;
@@ -1929,10 +1978,11 @@
                 const imageBase64 = canvas.toDataURL('image/jpeg', 0.85);
 
                 show3DNotify('in', 'Verifying...');
-                const res = await callPost('smart_attendance.smart_attendance.api.verify_face', {
+                const res = await callPost('smart_attendance.kiosk.verify_face', {
                     image_base64: imageBase64,
                     log_type: 'AUTO',
-                    device_id: null
+                    device_id: null,
+                    timestamp: getLocalSQLTime()
                 });
 
                 if (res.ok) {
@@ -2040,51 +2090,51 @@
 
             // POST version for writes
             async function callPost(method, args = {}, retry = true) {
-                // Use JSON for robust data transmission
-                const body = JSON.stringify(args);
+                // Use FormData to prevent 400 Bad Request on large payloads (e.g. base64 images)
+                const formData = new FormData();
+                if (args) {
+                    for (const [key, value] of Object.entries(args)) {
+                        if (value === null || value === undefined) {
+                            formData.append(key, "");
+                        } else {
+                            formData.append(key, value);
+                        }
+                    }
+                }
 
                 try {
                     const token = frappe.csrf_token || '';
-                    // console.log("Sending CSRF:", token); // Debug
 
                     const res = await fetch(`/api/method/${method}`, {
                         method: 'POST',
                         headers: {
                             'X-Frappe-CSRF-Token': token,
-                            'Accept': 'application/json',
-                            'Content-Type': 'application/json'
+                            'Accept': 'application/json'
                         },
-                        body: body
+                        body: formData
                     });
 
-                    if (res.status === 417) {
-                        console.error("CSRF Token Mismatch (417).");
-
-                        if (retry) {
-                            console.log("Attempting to refresh token and retry...");
-                            const refreshed = await fetchKioskCSRF();
-                            if (refreshed) {
-                                return await callPost(method, args, false);
-                            }
-                        }
-
-                        // Parse error if possible even if 417
-                        // Usually 417 returns HTML, so we might just reload
-                        console.error("CSRF Retry failed. Reloading...");
-                        // Optional: Show a toast before reloading
-                        if (window.show3DNotify) window.show3DNotify('error', 'Session expired. Refreshing...');
-                        setTimeout(() => window.location.reload(), 1500); // Increased delay to show toast
-                        return { ok: false, message: "Session expired" };
-                    }
-
+                    // Log full error body
                     if (!res.ok) {
                         console.error(`API ${method} failed with status ${res.status}`);
                         let errorMsg = "Request Failed";
                         try {
                             const errData = await res.json();
+                            console.error("Error Detail:", errData); // Show valid server error if any
                             errorMsg = errData.message || errorMsg;
-                        } catch (e) { }
-                        return { ok: false, message: errorMsg };
+
+                            // Check for Frappe specific error trace
+                            if (errData._server_messages) {
+                                try {
+                                    const msgs = JSON.parse(errData._server_messages);
+                                    errorMsg = msgs.join("\n");
+                                } catch (e) { }
+                            }
+                        } catch (e) {
+                            const text = await res.text();
+                            console.error("Error Text:", text);
+                        }
+                        return { ok: false, message: errorMsg, status: res.status };
                     }
 
                     const data = await res.json();
@@ -2097,10 +2147,20 @@
 
                     return data;
                 } catch (e) {
-                    console.error("API Post Error", e);
-                    return { ok: false, message: "Network Error" };
+                    console.error("API Post Network Error", e);
+                    return { ok: false, message: "Network Error: " + e.message };
                 }
             }
+
+            // Test connectivity on load
+            (async () => {
+                try {
+                    const pond = await callPost('smart_attendance.kiosk.ping');
+                    console.log("Ping Check:", pond);
+                } catch (e) {
+                    console.error("Ping Failed", e);
+                }
+            })();
 
             /* ---------- Backend Settings ---------- */
             const kioskFlags = {
@@ -2589,16 +2649,24 @@
 
                     // 2. Call Backend to Mark Attendance (Using Face Verification API)
                     // Use POST for marking attendance
-                    const r = await callPost("smart_attendance.smart_attendance.api.face_verification.mark_attendance_by_face", {
+                    const r = await callPost("smart_attendance.kiosk.verify_face", {
                         employee: employee_id || "",
                         image_base64: image_base64 || "",
-                        log_type: explicit_type || "AUTO"
+                        log_type: explicit_type || "AUTO",
+                        device_id: "null",
+                        timestamp: getLocalSQLTime()
                     });
 
                     if (r.message && r.message.ok) {
+                        console.log("Kiosk Success Response:", r.message);
                         const type = r.message.log_type;
                         const name = r.message.employee_name || r.message.employee;
-                        show3DNotify(type === 'IN' ? 'in' : 'out', type === 'IN' ? `✅ IN: ${name}` : `⛔ OUT: ${name}`);
+                        const docName = r.message.name;
+
+                        let msgTitle = type === 'IN' ? `✅ IN: ${name}` : `⛔ OUT: ${name}`;
+                        if (docName) msgTitle += ` (${docName})`;
+
+                        show3DNotify(type === 'IN' ? 'in' : 'out', msgTitle);
 
                         const detectedId = r.message.employee;
 
@@ -2611,15 +2679,18 @@
                             blinkCount = 0; // ✅ Reset blink after success logic finishes
                         }, 1000);
                     } else {
+                        console.error("Kiosk Failure Response:", r);
                         const msg = r.message?.message || '❌ Attendance Failed';
                         const reason = r.message?.reason;
 
                         if (reason === 'spoofing_detected') {
                             show3DNotify('error', '🛡️ Spoofing Detected! Please use a real face.');
                         } else {
+                            // If user said "Check Out shows" incorrectly, making this explicit
                             show3DNotify('error', msg);
                         }
                     }
+
 
                 } catch (e) {
                     console.error(e);

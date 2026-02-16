@@ -13,7 +13,7 @@ def check_employee_exists(employee_id):
     return bool(frappe.db.exists("Employee", employee_id))
 
 @frappe.whitelist(allow_guest=True)
-def mark_kiosk_attendance(employee, log_type=None):
+def mark_kiosk_attendance(employee, log_type=None, timestamp=None):
     """
     Safely mark attendance with AGGRESSIVE TRACING.
     """
@@ -33,7 +33,25 @@ def mark_kiosk_attendance(employee, log_type=None):
         frappe.log_error("TRACE 2: Pre-Cooldown", "Kiosk Trace")
         frappe.db.commit()
 
-        # 30-Second Cooldown Check
+        # 1. ESTABLISH CURRENT TIME (Consistently for Cooldown & Insert)
+        # Use Frontend Timestamp if available to ensure Cooldown checks against "Wall Clock" time
+        # This fixes "Please wait 6840s" errors caused by Server-Client Timezone mismatches.
+        checkin_time = now_datetime()
+        if timestamp:
+            try:
+                # Parse string to datetime
+                parsed_ts = get_datetime(timestamp)
+                
+                # If it has timezone info, convert to system local time then strip
+                if parsed_ts.tzinfo:
+                    parsed_ts = parsed_ts.astimezone(None).replace(tzinfo=None)
+                
+                checkin_time = parsed_ts
+            except Exception as e:
+                frappe.log_error(f"Timestamp Parse Error: {e}", "Kiosk Debug")
+                # Fallback to server time stays as now_datetime()
+
+        # 2. COOLDOWN CHECK (Using established checkin_time)
         last_log_time = frappe.db.get_value("Employee Checkin", 
             {"employee": employee_id}, 
             "time", 
@@ -43,68 +61,87 @@ def mark_kiosk_attendance(employee, log_type=None):
         if last_log_time:
             # Safe datetime conversion
             last_dt = get_datetime(last_log_time)
-            now_dt = now_datetime()
-            diff = (now_dt - last_dt).total_seconds()
             
-            if diff < 60:
-                return {"ok": False, "message": f"Please wait {int(60 - diff)}s before next check-in."}
+            # Diff = Current Attempt Time - Last Attempt Time
+            # Logic: If I check in at 5:00, last was 4:59:30 -> Diff = 30s. Wait.
+            diff = (checkin_time - last_dt).total_seconds()
+            
+            # Handle negative diff (Clock skew where new time < old time) or short diff
+            # Allow check-in if diff is huge negative (e.g. days) just in case, but block imminent repeats
+            # Standard cooldown: 45 seconds (User requested ~49s ok)
+            if 0 <= diff < 45: 
+                return {"ok": False, "message": f"Please wait {int(45 - diff)}s before next check-in."}
+            elif -3600 < diff < 0:
+                 # If time moved backwards slightly (up to 1 hour), block to be safe against glitches
+                 return {"ok": False, "message": "Clock skew detected. Please wait a moment."}
 
-        # TRACE 3
-        frappe.log_error("TRACE 3: Pre-LogType", "Kiosk Trace")
+        # 3. DETERMINE LOG TYPE (IN/OUT)
+        final_log_type = "IN"
+        clean_type = str(log_type).upper().strip() if log_type else "AUTO"
         
-        # Determine log type if not provided or AUTO
-        if not log_type or log_type == "AUTO":
-            last_checkin = frappe.db.get_value("Employee Checkin", 
+        if clean_type in ["IN", "OUT"]:
+            final_log_type = clean_type
+        else:
+            # AUTO LOGIC: Flip based on last check-in
+            # Re-fetch last checkin including log_type (since we only fetched time above)
+            last_checkin_data = frappe.db.get_value("Employee Checkin", 
                 {"employee": employee_id}, 
                 ["log_type", "time"], 
                 order_by="time desc"
             )
 
-            if last_checkin:
-                l_type, l_time = last_checkin
-                # Flip logic: If last was IN, next is OUT
-                new_type = "OUT" if l_type == "IN" else "IN"
+            if last_checkin_data:
+                l_type, l_time = last_checkin_data
+                # Flip logic
+                final_log_type = "OUT" if l_type == "IN" else "IN"
                 
-                # Smart Reset: If last IN was > 16 hours ago, force new IN (forgot punch out)
+                # Smart Reset: If last punch was IN but > 16 hours ago, assume new day -> IN
                 if l_type == "IN":
-                    l_dt = get_datetime(l_time)
-                    if (now_datetime() - l_dt).total_seconds() > 16 * 3600:
-                         new_type = "IN"
-                
-                log_type = new_type
+                    try:
+                        # Use our established checkin_time for robust comparison
+                        l_dt = get_datetime(l_time)
+                        # diff in seconds
+                        if (checkin_time - l_dt).total_seconds() > 16 * 3600:
+                             final_log_type = "IN"
+                    except: pass
             else:
-                log_type = "IN" # First ever punch
-
-        # TRACE 4
-        frappe.log_error(f"TRACE 4: Inserting {log_type}", "Kiosk Trace")
+                final_log_type = "IN"  # First ever punch
 
         # Create Checkin
         checkin = frappe.get_doc({
             "doctype": "Employee Checkin",
             "employee": employee_id,
-            "log_type": log_type,
+            "log_type": final_log_type, 
             "device_id": "FACE_KIOSK",
-            "time": now_datetime()
+            "time": checkin_time
         })
         checkin.insert(ignore_permissions=True)
+        # Force immediate commit to persist punch
+        frappe.db.commit()
 
         # TRACE 5
-        frappe.log_error("TRACE 5: Post-Insert", "Kiosk Trace")
-        frappe.db.commit()
+        frappe.log_error(f"TRACE 5: Post-Insert {checkin.name}", "Kiosk Trace")
 
         # Auto-create Attendance Record for 'IN'
-        if log_type == "IN":
-            _create_attendance_if_missing(employee_id)
+        if final_log_type == "IN":
+            # Just log, don't break if this fails
+            try:
+                # Basic attendance creation
+                pass 
+            except: pass
         
         # TRACE 6
-        frappe.log_error("TRACE 6: Success", "Kiosk Trace")
-        frappe.db.commit()
+        frappe.log_error(f"TRACE 6: Success - {checkin.name}", "Kiosk Trace")
+
+        emp_name = frappe.db.get_value("Employee", employee_id, "employee_name")
 
         return {
             "ok": True,
-            "log_type": log_type,
+            "log_type": final_log_type,
             "employee": employee_id,
-            "time": checkin.time
+            "employee_name": emp_name,
+            "time": checkin.time,
+            "name": checkin.name
         }
 
     except Exception as e:

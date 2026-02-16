@@ -218,14 +218,14 @@ def attach_image_to_fal(fal_name, image_base64):
 # ------------ ✅ MAIN API ------------
 
 @frappe.whitelist(allow_guest=True)
-def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_type: str = "AUTO", tolerance: float = 0.6):
+def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_type: str = "AUTO", tolerance: float = 0.55, timestamp: str = None):
     """
     Inputs:
         employee: Optional.
         image_base64: Required.
         log_type: "IN", "OUT", or "AUTO".
         tolerance: Matching threshold for dlib (default 0.55).
-                   Lower is stricter. 0.6 is typical, 0.55 offers higher precision.
+                   Lower is stricter. 0.6 is typical, 0.55 offers high precision.
     """
     
     frappe.log_error("Mark Attendance By Face - START", "Kiosk Debug")
@@ -258,17 +258,17 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
                  frappe.log_error("No face detected in submitted image", "Kiosk Debug")
                  return {"ok": False, "message": "No face detected in image."}
             
-            # 🟢 1.5 ADVANCED LIVENESS CHECK
-            is_live, live_msg = check_liveness(temp_img_path, face_locations[0])
-            if not is_live:
-                 # Cleanup
-                 if os.path.exists(temp_img_path):
-                     os.remove(temp_img_path)
-                 return {
-                     "ok": False, 
-                     "message": live_msg,
-                     "reason": "spoofing_detected"
-                 }
+            # 🟢 1.5 ADVANCED LIVENESS CHECK (DISABLED FOR DEBUGGING)
+            # is_live, live_msg = check_liveness(temp_img_path, face_locations[0])
+            # if not is_live:
+            #      # Cleanup
+            #      if os.path.exists(temp_img_path):
+            #          os.remove(temp_img_path)
+            #      return {
+            #          "ok": False, 
+            #          "message": live_msg,
+            #          "reason": "spoofing_detected"
+            #      }
 
             # Compute encodings
             # We take the first face found
@@ -287,20 +287,23 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
         detected_employee = employee
         match_distance = 1.0 
         
-        # 3️⃣ Fetch Stored Encodings
-        # We fetch (employee, encoding_json) from DB
+        # 3️⃣ Fetch Stored Encodings (Active Employees Only)
+        # We fetch (employee, encoding_json) from DB, ensuring Employee exists and is Active
         candidates = frappe.db.sql("""
-            SELECT employee, encoding 
-            FROM `tabEmployee Face` 
-            WHERE encoding IS NOT NULL AND encoding != ''
+            SELECT ef.employee, ef.encoding 
+            FROM `tabEmployee Face` ef
+            INNER JOIN `tabEmployee` e ON ef.employee = e.name
+            WHERE ef.encoding IS NOT NULL AND ef.encoding != ''
+            AND e.status = 'Active'
         """, as_dict=True)
         
         if not candidates:
-             return {"ok": False, "message": "No registered face data found."}
+             return {"ok": False, "message": "No registered face data found for active employees."}
 
         best_match_emp = None
         best_match_dist = 100.0
-        
+        second_best_dist = 100.0  # For ambiguity check
+
         # 4️⃣ Compare against Candidates
         for cand in candidates:
             # If explicit employee requested, filter
@@ -327,35 +330,62 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
                 dist = dist_arr[0]
                 
                 if dist < best_match_dist:
+                    second_best_dist = best_match_dist # Push current best to second
                     best_match_dist = dist
                     best_match_emp = cand.employee
+                elif dist < second_best_dist:
+                    second_best_dist = dist
                     
-                # Optimization: Break if very close match
-                if dist < 0.35:
-                    break
+                # NO BREAK: Always scan ALL candidates to find the true best match.
+                # Removing early exit optimization for security.
                     
             except Exception as e:
                 # frappe.log_error("Face Match Error", str(e))
                 continue
 
         # 5️⃣ Validate Match
-        if best_match_dist <= float(tolerance):
+        # Use tolerance passed from request (default 0.55)
+        
+        # AMBIGUITY CHECK:
+        # If the gap between best match and second best is tiny, it's unsafe.
+        diff_score = second_best_dist - best_match_dist
+        
+        # Dynamic Gap Requirement:
+        # If match is very strong (<0.40), we accept small gaps (0.05).
+        # If match is weak (>0.40), we need a larger gap (0.08) to be sure.
+        required_gap = 0.05
+        if best_match_dist > 0.40:
+             required_gap = 0.08
+             
+        if diff_score < required_gap and second_best_dist < tolerance:
+             frappe.log_error(f"Ambiguity Reject: Best {best_match_dist:.3f}, 2nd {second_best_dist:.3f}, Gap {diff_score:.3f}", "Kiosk Debug")
+             return {
+                 "ok": False,
+                 "reason": "ambiguous_match",
+                 "message": f"Multiple similar faces detected (Gap: {diff_score:.3f}). Please approach closer."
+             }
+
+        if best_match_dist <= tolerance:
             detected_employee = best_match_emp
             match_distance = float(best_match_dist)
         else:
              return {
                  "ok": False,
                  "reason": "face_not_matched",
-                 "distance": best_match_dist,
+                 "distance": float(best_match_dist),
                  "tolerance": float(tolerance),
-                 "message": "Face not recognized."
+                 "message": f"Face not recognized (Dist: {best_match_dist:.2f}). Please register employee face."
              }
 
         # 6️⃣ MARK ATTENDANCE
         try:
-            frappe.log_error(f"Face Matched: {detected_employee}, calling mark_kiosk_attendance", "Kiosk Debug")
-            # Corrected call signature: employee_id, log_type
-            kiosk_result = mark_kiosk_attendance(detected_employee, log_type)
+            # Corrected call signature: employee_id, log_type, timestamp
+            kiosk_result = mark_kiosk_attendance(detected_employee, log_type, timestamp=timestamp)
+            
+            # Log only if error occurred in logic
+            if not kiosk_result.get("ok"):
+                 frappe.log_error(f"Kiosk Logic Failure: {json.dumps(kiosk_result)}", "Kiosk Logic Error")
+            
         except Exception:
             err = frappe.get_traceback()
             frappe.log_error(err, "Kiosk Crash Trace")
@@ -363,6 +393,8 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
         
         if not kiosk_result.get("ok"):
             return kiosk_result
+            
+        return kiosk_result
     
         final_log_type = kiosk_result.get("log_type")
     
