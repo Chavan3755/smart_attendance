@@ -13,11 +13,12 @@ def check_employee_exists(employee_id):
     return bool(frappe.db.exists("Employee", employee_id))
 
 @frappe.whitelist(allow_guest=True)
-def mark_kiosk_attendance(employee_id, log_type=None):
+def mark_kiosk_attendance(employee, log_type=None):
     """
     Safely mark attendance with AGGRESSIVE TRACING.
     """
     try:
+        employee_id = employee
         # TRACE 1
         frappe.log_error(f"TRACE 1: Start {employee_id}", "Kiosk Trace")
         frappe.db.commit()
@@ -50,10 +51,9 @@ def mark_kiosk_attendance(employee_id, log_type=None):
 
         # TRACE 3
         frappe.log_error("TRACE 3: Pre-LogType", "Kiosk Trace")
-        frappe.db.commit()
-
-        # Determine log type if not provided
-        if not log_type:
+        
+        # Determine log type if not provided or AUTO
+        if not log_type or log_type == "AUTO":
             last_checkin = frappe.db.get_value("Employee Checkin", 
                 {"employee": employee_id}, 
                 ["log_type", "time"], 
@@ -62,20 +62,21 @@ def mark_kiosk_attendance(employee_id, log_type=None):
 
             if last_checkin:
                 l_type, l_time = last_checkin
-                log_type = "OUT" if l_type == "IN" else "IN"
+                # Flip logic: If last was IN, next is OUT
+                new_type = "OUT" if l_type == "IN" else "IN"
                 
-                # Smart Correction
+                # Smart Reset: If last IN was > 16 hours ago, force new IN (forgot punch out)
                 if l_type == "IN":
                     l_dt = get_datetime(l_time)
-                    diff_h = simple_time_diff_hours(now_datetime(), l_dt)
-                    if diff_h > 15:
-                        log_type = "IN"
+                    if (now_datetime() - l_dt).total_seconds() > 16 * 3600:
+                         new_type = "IN"
+                
+                log_type = new_type
             else:
-                log_type = "IN"
+                log_type = "IN" # First ever punch
 
         # TRACE 4
         frappe.log_error(f"TRACE 4: Inserting {log_type}", "Kiosk Trace")
-        frappe.db.commit()
 
         # Create Checkin
         checkin = frappe.get_doc({

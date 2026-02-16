@@ -4,6 +4,10 @@ import base64, io, json
 from datetime import datetime, date, timedelta
 
 @frappe.whitelist(allow_guest=True)
+def get_csrf_token():
+    return {"csrf_token": frappe.local.session.data.csrf_token}
+
+@frappe.whitelist(allow_guest=True)
 def get_today_logs(employee):
   
     if not employee:
@@ -209,141 +213,189 @@ def enroll_face(employee, image_base64):
     return {"status":"ok", "doc": doc.name}
 
 @frappe.whitelist(allow_guest=True)
-def verify_face(device_id=None, device_secret=None, image_base64=None, confidence_threshold=0.6, employee=None, log_type="AUTO"):
-    """Kiosk calls this endpoint (POST)."""
-    
-    
-    # SCREAM TEST (Temporary Debug)
-    # frappe.throw(f"DEBUG: dev={device_id} img={bool(image_base64)}")
-
-    # 0. WEB KIOSK DELEGATION
-    if (not device_id or device_id == "null"):
-         if not image_base64:
-             return {"ok": False, "message": "No image provided for Kiosk verification"}
-
-         try:
-             # Debug Step 1
-             frappe.db.commit() # FORCE COMMIT
-             
-             # Lazy import for safety
-             from smart_attendance.smart_attendance.api.face_verification import mark_attendance_by_face
-             
-             # Debug Step 2
-             frappe.log_error("Delegation Step 2: Import success. Calling function.", "Kiosk Debug")
-             frappe.db.commit() # FORCE COMMIT
-             
-             return mark_attendance_by_face(employee, image_base64, log_type, confidence_threshold)
-         except ImportError as e:
-             frappe.log_error(f"Import Error in Delegation: {str(e)}", "Kiosk Debug")
-             frappe.db.commit()
-             return {"ok": False, "message": f"Server Import Error: {str(e)}"}
-         except Exception as e:
-             frappe.log_error(f"Delegation Error: {str(e)}", "Kiosk Debug")
-             frappe.db.commit()
-             return {"ok": False, "message": f"Server Error: {str(e)}"}
-
-    # authenticate device
-    if not device_id or not device_secret:
-        frappe.throw("Device credentials required")
+def verify_face(**kwargs):
+    """Kiosk calls this endpoint (POST). Uses kwargs to avoid 400 Bad Request on arg mismatch."""
     try:
-        dev = frappe.get_doc("Attendance Device", device_id)
-    except frappe.DoesNotExistError:
-        frappe.throw("Invalid device id")
-    if not dev.is_active or dev.secret_key != device_secret:
-        frappe.throw("Invalid device credentials")
-    # decode image
-    header, b64 = image_base64.split(',',1) if ',' in image_base64 else (None, image_base64)
-    imgdata = base64.b64decode(b64)
-    unknown_encoding = _compute_encoding(imgdata)
-    if not unknown_encoding:
-        # no face detected — save unmatched record
-        att = frappe.get_doc({
-            "doctype":"Face Attendance",
-            "employee": None,
-            "device": device_id,
-            "attendance_time": frappe.utils.now_datetime(),
-            "confidence": 0,
-            "status": "Unmatched"
-        }).insert(ignore_permissions=True)
-        _attach_file(att, imgdata)
-        frappe.db.commit()
-        return {"status":"unmatched", "reason":"no_face_detected"}
+        # Debug: Log keys to verify reception
+        frappe.log_error(f"Kiosk Verify Called. Args: {list(kwargs.keys())}", "Kiosk Debug")
+        
+        # Extract args safely
+        device_id = kwargs.get("device_id")
+        device_secret = kwargs.get("device_secret")
+        image_base64 = kwargs.get("image_base64")
+        confidence_threshold = kwargs.get("confidence_threshold", 0.6)
+        employee = kwargs.get("employee")
+        log_type = kwargs.get("log_type", "IN")
 
-    # load all encodings (cache recommended)
-    faces = frappe.get_all("Employee Face", fields=["name","employee","encoding"])
-    import face_recognition
-    best = None
-    best_dist = 1.0
-    for f in faces:
-        if not f.encoding:
-            continue
-            
+        # Sanitize log_type - Default to IN, treat AUTO as IN explicit mode
+        if not log_type or str(log_type).lower() in ["null", "undefined", "none", "", "auto"]:
+            log_type = "IN"
+        
+        # Sanitize confidence
         try:
-            known = json.loads(f.encoding)
-            dist = face_recognition.face_distance([known], unknown_encoding)[0]
-            if dist < best_dist:
-                best_dist = dist
-                best = f
-        except Exception as e:
-            frappe.log_error(f"Error processing face encoding for {f.name}: {str(e)}")
-            continue
-    confidence = float(1.0 - best_dist) if best else 0.0
-    if best and confidence >= float(confidence_threshold):
-        att = frappe.get_doc({
-            "doctype":"Face Attendance",
-            "employee": best.employee,
-            "device": device_id,
-            "attendance_time": frappe.utils.now_datetime(),
-            "confidence": confidence,
-            "status": "Present",
-            "match_type": "Auto"
-        }).insert(ignore_permissions=True)
-        _attach_file(att, imgdata)
-        frappe.db.commit()
-        # update device last_seen
-        frappe.db.set_value("Attendance Device", device_id, "last_seen", frappe.utils.now_datetime())
+             confidence_threshold = float(confidence_threshold)
+        except:
+             confidence_threshold = 0.6
+        
+        # 0. WEB KIOSK DELEGATION
+        # Handle various "null" string representations from frontend
+        if (not device_id or str(device_id).lower() in ["null", "undefined", "none", ""]):
+             if not image_base64:
+                 return {"ok": False, "message": "No image provided for Kiosk verification"}
 
-        # --- STANDARD HR CHECKIN ---
+             try:
+                 # Lazy import for safety
+                 from smart_attendance.smart_attendance.api.face_verification import mark_attendance_by_face
+                 
+                 return mark_attendance_by_face(employee, image_base64, log_type, confidence_threshold)
+             except Exception as e:
+                 frappe.log_error(f"Delegation Error: {str(e)}", "Kiosk Debug")
+                 return {"ok": False, "message": f"Server Error: {str(e)}"}
+
+        # authenticate device
+        if not device_id or not device_secret:
+            frappe.throw("Device credentials required")
         try:
-            frappe.get_doc({
-                "doctype": "Employee Checkin",
-                "employee": best.employee,
-                "log_type": "IN", # Default to IN, or logic could be improved to toggle
-                "time": frappe.utils.now_datetime(),
-                "device_id": device_id
+            dev = frappe.get_doc("Attendance Device", device_id)
+        except frappe.DoesNotExistError:
+            frappe.throw("Invalid device id")
+        if not dev.is_active or dev.secret_key != device_secret:
+            frappe.throw("Invalid device credentials")
+        # decode image
+        header, b64 = image_base64.split(',',1) if ',' in image_base64 else (None, image_base64)
+        imgdata = base64.b64decode(b64)
+        unknown_encoding = _compute_encoding(imgdata)
+        if not unknown_encoding:
+            # no face detected — save unmatched record
+            att = frappe.get_doc({
+                "doctype":"Face Attendance",
+                "employee": None,
+                "device": device_id,
+                "attendance_time": frappe.utils.now_datetime(),
+                "confidence": 0,
+                "status": "Unmatched"
             }).insert(ignore_permissions=True)
+            _attach_file(att, imgdata)
+            frappe.db.commit()
+            return {"status":"unmatched", "reason":"no_face_detected"}
+
+        # load all encodings (cache recommended)
+        faces = frappe.get_all("Employee Face", fields=["name","employee","encoding"])
+        import face_recognition
+        best = None
+        best_dist = 1.0
+        for f in faces:
+            if not f.encoding:
+                continue
+                
+            try:
+                known = json.loads(f.encoding)
+                dist = face_recognition.face_distance([known], unknown_encoding)[0]
+                if dist < best_dist:
+                    best_dist = dist
+                    best = f
+            except Exception as e:
+                frappe.log_error(f"Error processing face encoding for {f.name}: {str(e)}")
+                continue
+        confidence = float(1.0 - best_dist) if best else 0.0
+        
+        # Use 0.5 threshold for better user experience
+        if best and confidence >= 0.5:
+            att = frappe.get_doc({
+                "doctype":"Face Attendance",
+                "employee": best.employee,
+                "device": device_id,
+                "attendance_time": frappe.utils.now_datetime(),
+                "confidence": confidence,
+                "status": "Present",
+                "match_type": "Auto"
+            }).insert(ignore_permissions=True)
+            _attach_file(att, imgdata)
+            frappe.db.commit()
+            # update device last_seen
+            frappe.db.set_value("Attendance Device", device_id, "last_seen", frappe.utils.now_datetime())
+
+            # --- STANDARD HR CHECKIN ---
+            try:
+                # Determine Log Type: If AUTO, infer from last log, else use explicit type (IN/OUT)
+                final_log_type = log_type
+                if log_type == "AUTO":
+                    last_type = get_last_log_type(best.employee)
+                    final_log_type = "OUT" if last_type == "IN" else "IN"
+
+                frappe.get_doc({
+                    "doctype": "Employee Checkin",
+                    "employee": best.employee,
+                    "log_type": final_log_type, 
+                    "time": frappe.utils.now_datetime(),
+                    "device_id": device_id
+                }).insert(ignore_permissions=True)
+                
+                # Fetch name for display
+                emp_name = frappe.db.get_value("Employee", best.employee, "employee_name") or best.employee
+                
+                return {
+                    "status": "success", 
+                    "ok": True, 
+                    "employee": best.employee, 
+                    "employee_name": emp_name, 
+                    "confidence": confidence, 
+                    "log_type": final_log_type
+                }
+            except Exception as e:
+                frappe.log_error(f"Failed to create Employee Checkin: {str(e)}")
+                return {"status":"success", "ok": False, "message": f"Face matched but Check-in failed: {str(e)}", "employee": best.employee, "confidence": confidence}
+            # ---------------------------
+        else:
+            # unmatched / low-confidence
+            status = "Low Confidence" if best else "Unmatched"
             
-            return {"status":"success", "ok": True, "employee": best.employee, "employee_name": best.employee, "confidence": confidence, "log_type": "IN"}
-        except Exception as e:
-            frappe.log_error(f"Failed to create Employee Checkin: {str(e)}")
-            return {"status":"success", "ok": False, "message": f"Face matched but Check-in failed: {str(e)}", "employee": best.employee, "confidence": confidence}
-        # ---------------------------
-    else:
-        # unmatched / low-confidence
-        status = "Low Confidence" if best else "Unmatched"
-        att = frappe.get_doc({
-            "doctype":"Face Attendance",
-            "employee": best.employee if best else None,
-            "device": device_id,
-            "attendance_time": frappe.utils.now_datetime(),
-            "confidence": confidence,
-            "status": status,
-            "match_type": "Auto"
-        }).insert(ignore_permissions=True)
-        _attach_file(att, imgdata)
-        frappe.db.commit()
-        return {"status":"unmatched", "confidence": confidence}
+            # LOGGING FOR DEBUGGING
+            dist_msg = f"Best: {1.0-confidence:.2f} (Conf: {confidence:.2f})" if best else "No match"
+            frappe.log_error(f"Face Mismatch. Found {len(faces)} known faces. {dist_msg}", "Kiosk Debug")
+            
+            att = frappe.get_doc({
+                "doctype":"Face Attendance",
+                "employee": best.employee if best else None,
+                "device": device_id,
+                "attendance_time": frappe.utils.now_datetime(),
+                "confidence": confidence,
+                "status": status,
+                "match_type": "Auto"
+            }).insert(ignore_permissions=True)
+            _attach_file(att, imgdata)
+            frappe.db.commit()
+            return {"status":"unmatched", "confidence": confidence}
+
+    except Exception as e:
+        frappe.log_error(f"Kiosk Verify Error (Top Level): {str(e)}", "Kiosk Crash")
+        return {"ok": False, "message": f"System Error: {str(e)}"}
  
+# Helpers:
 # Helpers:
 def _compute_encoding(imgbytes):
     """Return face encoding list or None. Requires face_recognition installed."""
     try:
         import face_recognition
-        from PIL import Image
+        from PIL import Image, ImageOps 
         import numpy as np
-        img = Image.open(io.BytesIO(imgbytes)).convert('RGB')
+        
+        # Open image from bytes
+        img = Image.open(io.BytesIO(imgbytes))
+        
+        # Handle EXIF rotation (Mobile camera fix)
+        img = ImageOps.exif_transpose(img)
+        
+        # Convert to RGB
+        img = img.convert('RGB')
+        
         arr = np.array(img)
         encs = face_recognition.face_encodings(arr)
+        
+        # Log if no face found during enrollment/verification internal check
+        if not encs:
+            frappe.log_error("No face found in image during encoding.", "Face Encode Debug")
+            
         return encs[0].tolist() if encs else None
     except Exception as e:
         frappe.log_error(message=str(e), title="Face encoding error")
@@ -358,3 +410,92 @@ def _attach_file(doc, imgbytes):
         "attached_to_name": doc.name,
         "content": base64.b64encode(imgbytes).decode('utf-8')
     }).insert(ignore_permissions=True)
+
+@frappe.whitelist(allow_guest=True)
+def get_recent_attendance(employee):
+    """
+    Returns the last 5 attendance records from the 'Attendance' DocType.
+    """
+    if not employee:
+        return []
+    
+    try:
+        attendance_list = frappe.get_all("Attendance",
+            filters={"employee": employee, "docstatus": 1},
+            fields=["attendance_date", "in_time", "out_time", "status", "working_hours"],
+            order_by="attendance_date desc",
+            limit=5
+        )
+        
+        # Format for frontend
+        data = []
+        for att in attendance_list:
+            in_time = format_time(att.in_time) if att.in_time else "--:--"
+            out_time = format_time(att.out_time) if att.out_time else "--:--"
+            
+            data.append({
+                "date": formatdate(att.attendance_date),
+                "raw_date": att.attendance_date,
+                "day": get_datetime(att.attendance_date).strftime("%A"),
+                "status": att.status,
+                "in_time": in_time,
+                "out_time": out_time,
+                "working_hours": f"{float(att.working_hours):.1f}h" if att.working_hours else ""
+            })
+            
+        return data
+    except Exception as e:
+        frappe.log_error(f"Error fetching attendance: {e}", "Kiosk API")
+        return []
+
+def format_time(time_val):
+    if not time_val: return "--:--"
+    return get_datetime(time_val).strftime("%I:%M %p")
+
+@frappe.whitelist(allow_guest=True)
+def get_employee_holidays(employee):
+    """
+    Uses the standard ERPNext method to fetch holidays.
+    """
+    if not employee:
+        return []
+        
+    try:
+        from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employee
+        
+        # This returns the name of the holiday list
+        holiday_list_name = get_holiday_list_for_employee(employee)
+        
+        if not holiday_list_name:
+            return []
+            
+        # Now fetch the holidays from that list for the current year
+        year_start = get_datetime(nowdate()).replace(month=1, day=1)
+        year_end = get_datetime(nowdate()).replace(month=12, day=31)
+        
+        holidays = frappe.get_all("Holiday",
+            filters={
+                "parent": holiday_list_name,
+                "holiday_date": ["between", [nowdate(), year_end]]
+            },
+            fields=["holiday_date", "description"],
+            order_by="holiday_date asc",
+            limit=20
+        )
+        
+        data = []
+        for h in holidays:
+            data.append({
+                "date": formatdate(h.holiday_date),
+                "description": h.description,
+                "day": get_datetime(h.holiday_date).strftime("%A")
+            })
+            
+        return data
+
+    except ImportError:
+         # Fallback if ERPNext module not found (unlikely)
+         return fetch_next_15_days_holidays(employee).get("holidays", [])
+    except Exception as e:
+        frappe.log_error(f"Error fetching holidays: {e}", "Kiosk API")
+        return []

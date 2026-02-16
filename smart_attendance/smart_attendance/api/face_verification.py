@@ -229,6 +229,10 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
     """
     
     frappe.log_error("Mark Attendance By Face - START", "Kiosk Debug")
+
+    # Sanitize log_type - Default to IN, treat AUTO as IN explicit mode
+    if not log_type or str(log_type).lower() in ["null", "undefined", "none", "", "auto"]:
+        log_type = "IN"
     
     if not face_recognition:
         frappe.log_error("Face Rec Lib Missing", "Kiosk Debug")
@@ -350,7 +354,8 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
         # 6️⃣ MARK ATTENDANCE
         try:
             frappe.log_error(f"Face Matched: {detected_employee}, calling mark_kiosk_attendance", "Kiosk Debug")
-            kiosk_result = mark_kiosk_attendance(detected_employee, log_type if log_type != "AUTO" else None)
+            # Corrected call signature: employee_id, log_type
+            kiosk_result = mark_kiosk_attendance(detected_employee, log_type)
         except Exception:
             err = frappe.get_traceback()
             frappe.log_error(err, "Kiosk Crash Trace")

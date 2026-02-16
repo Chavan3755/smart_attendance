@@ -200,7 +200,7 @@ override_whitelisted_methods = {
 
 # Request Events
 # ----------------
-# before_request = ["smart_attendance.utils.before_request"]
+before_request = ["smart_attendance.utils.before_request"]
 # after_request = ["smart_attendance.utils.after_request"]
 
 # Job Events
