@@ -142,11 +142,11 @@ before_install = "smart_attendance.install.dependency.before_install"
 # ---------------
 # Hook on document methods and events
 
-doc_events = {
-    "Employee Checkin": {
-        "after_insert": "smart_attendance.smart_attendance.api.auto_attendance.create_realtime_attendance"
-    }
-}
+# doc_events = {
+#     "Employee Checkin": {
+#         "after_insert": "smart_attendance.smart_attendance.api.auto_attendance.create_realtime_attendance"
+#     }
+# }
 
 # doc_events = {
 # 	"*": {
