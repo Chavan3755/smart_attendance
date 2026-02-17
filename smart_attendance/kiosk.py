@@ -9,7 +9,7 @@ def ping():
     return {"message": "pong"}
 
 @frappe.whitelist(allow_guest=True)
-def verify_face(image_base64=None, log_type=None, device_id=None, device_secret=None, confidence_threshold=0.6, employee=None, timestamp=None):
+def verify_face(image_base64=None, log_type=None, device_id=None, device_secret=None, confidence_threshold=0.45, employee=None, timestamp=None):
     """
     Kiosk calls this endpoint (POST). 
     Explicit arguments used to ensure FormData parsing works correctly.
@@ -20,7 +20,7 @@ def verify_face(image_base64=None, log_type=None, device_id=None, device_secret=
         
         # Args are now local variables
         if not confidence_threshold:
-             confidence_threshold = 0.6
+             confidence_threshold = 0.45
 
         # Sanitize log_type
         if not log_type or str(log_type).lower() in ["null", "undefined", "none", ""]:
@@ -31,9 +31,9 @@ def verify_face(image_base64=None, log_type=None, device_id=None, device_secret=
              if confidence_threshold:
                 confidence_threshold = float(confidence_threshold)
              else:
-                confidence_threshold = 0.6
+                confidence_threshold = 0.45
         except:
-             confidence_threshold = 0.6
+             confidence_threshold = 0.45
         
         # 0. WEB KIOSK DELEGATION
         # Treat "null" string as None
