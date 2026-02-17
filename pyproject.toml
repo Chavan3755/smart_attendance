@@ -13,7 +13,8 @@ dependencies = [
     "opencv-python-headless",
     "numpy",
     "cmake",
-    "Pillow"
+    "Pillow",
+    "dlib"
 ]
 
 [project.optional-dependencies]

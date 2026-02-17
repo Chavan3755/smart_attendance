@@ -162,25 +162,35 @@ def check_liveness(image_path, face_location=None):
         
         # REJECTION CRITERIA (ADAPTIVE BIOMETRIC)
         # 1. Base Texture Floor
-        if texture_score < 11:
+        # Relaxed from 11 to 9 for smoother skin/lower light
+        if texture_score < 9:
             return False, f"Anti-Spoofing: Natural texture too low ({texture_score:.1f})"
             
         # 2. Regional Variance (The "Flat" Check)
         # Real faces > 0.4. Photos/Screens < 0.3.
         # Strict if low detail.
-        v_limit = 0.38 if is_low_detail else 0.32
+        # Relaxed limits: 0.30 (low detail) / 0.25 (standard)
+        v_limit = 0.30 if is_low_detail else 0.25
         if org_v < v_limit:
              return False, f"Anti-Spoofing: Surface too uniform ({org_v:.2f})"
 
         # 3. Frequency Ratio Check 
         # Real phone hits ~42. Photos hit 39-45.
-        # If low detail, the ratio MUST be lower (blocked if high ratio + low detail)
-        r_limit = 35 if is_low_detail else 46
+        # High quality cameras can hit 50+. 
+        # Valid User Log: 50.3. 
+        # We set limit to 55 to allow valid users but block high-freq screens (60+).
+        r_limit = 56 if is_low_detail else 55
+        
+        # REMOVED BYPASS: High contrast screens were exploiting the organic variance bypass.
+        
         if rel_freq > r_limit:
             return False, f"Anti-Spoofing: Secondary scan failed ({rel_freq:.1f})"
             
         # 4. Signal Sharpness (Digital Grid)
-        if sharpness > 0.18:
+        # Valid User: 0.12.
+        # Screen: > 0.18 usually.
+        # Tightened to 0.17 to catch sharp digital replays.
+        if sharpness > 0.17:
              return False, f"Anti-Spoofing: Digital grid detected ({sharpness:.2f})"
 
         return True, f"Liveness Check Passed (T:{texture_score:.0f}, O:{org_v:.1f})"
@@ -257,17 +267,20 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
                  # frappe.log_error("No face detected in submitted image", "Kiosk Debug")
                  return {"ok": False, "message": "No face detected in image."}
             
-            # 🟢 1.5 ADVANCED LIVENESS CHECK (DISABLED FOR DEBUGGING)
-            # is_live, live_msg = check_liveness(temp_img_path, face_locations[0])
-            # if not is_live:
-            #      # Cleanup
-            #      if os.path.exists(temp_img_path):
-            #          os.remove(temp_img_path)
-            #      return {
-            #          "ok": False, 
-            #          "message": live_msg,
-            #          "reason": "spoofing_detected"
-            #      }
+            # 🟢 1.5 ADVANCED LIVENESS CHECK (ENABLED)
+            is_live, live_msg = check_liveness(temp_img_path, face_locations[0])
+            if not is_live:
+                 # Cleanup
+                 if os.path.exists(temp_img_path):
+                     try:
+                        os.remove(temp_img_path)
+                     except:
+                        pass
+                 return {
+                     "ok": False, 
+                     "message": live_msg,
+                     "reason": "spoofing_detected"
+                 }
 
             # Compute encodings
             # We take the first face found
