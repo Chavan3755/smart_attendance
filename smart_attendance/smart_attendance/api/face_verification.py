@@ -227,7 +227,7 @@ def attach_image_to_fal(fal_name, image_base64):
 # ------------ ✅ MAIN API ------------
 
 @frappe.whitelist(allow_guest=True)
-def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_type: str = "AUTO", tolerance: float = 0.45, timestamp: str = None):
+def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_type: str = "AUTO", tolerance: float = 0.45, timestamp: str = None, verify_only: bool = False):
     """
     Inputs:
         employee: Optional.
@@ -396,16 +396,27 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
              }
 
         # 6️⃣ MARK ATTENDANCE
-        try:
-            kiosk_result = mark_kiosk_attendance(detected_employee, log_type, timestamp=timestamp)
-            
-            if not kiosk_result.get("ok"):
-                 frappe.log_error(f"Kiosk Logic Failure: {json.dumps(kiosk_result)}", "Kiosk Logic Error")
-            
-        except Exception:
-            err = frappe.get_traceback()
-            frappe.log_error(err, "Kiosk Crash Trace")
-            return {"ok": False, "message": "Server crashed during check-in creation. See Error Log 'Kiosk Crash Trace'."}
+        # 6️⃣ MARK ATTENDANCE
+        if verify_only:
+            # AUTH ONLY MODE - Skip Checkin Creation
+            kiosk_result = {
+                "ok": True,
+                "log_type": log_type,
+                "name": "AUTH-ONLY",
+                "time": now_datetime(),
+                "employee": detected_employee
+            }
+        else:
+            try:
+                kiosk_result = mark_kiosk_attendance(detected_employee, log_type, timestamp=timestamp)
+                
+                if not kiosk_result.get("ok"):
+                     frappe.log_error(f"Kiosk Logic Failure: {json.dumps(kiosk_result)}", "Kiosk Logic Error")
+                
+            except Exception:
+                err = frappe.get_traceback()
+                frappe.log_error(err, "Kiosk Crash Trace")
+                return {"ok": False, "message": "Server crashed during check-in creation. See Error Log 'Kiosk Crash Trace'."}
         
         if not kiosk_result.get("ok"):
             return kiosk_result
@@ -427,7 +438,7 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
             if last_audit_time:
                 from frappe.utils import get_datetime
                 diff = (now_datetime() - get_datetime(last_audit_time)).total_seconds()
-                if diff < 60:
+            if diff < 60 or verify_only:
                     # frappe.log_error(f"Audit log skipped for {detected_employee} (Cooldown: {int(diff)}s)", "Kiosk Debug")
                     return {
                         "ok": True,

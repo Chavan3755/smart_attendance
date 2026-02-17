@@ -226,6 +226,9 @@ def verify_face(**kwargs):
         confidence_threshold = kwargs.get("confidence_threshold", 0.6)
         employee = kwargs.get("employee")
         log_type = kwargs.get("log_type", "IN")
+        verify_only = kwargs.get("verify_only")
+        if isinstance(verify_only, str):
+            verify_only = (verify_only.lower() == "true")
 
         # Sanitize log_type - Default to IN, treat AUTO as IN explicit mode
         if not log_type or str(log_type).lower() in ["null", "undefined", "none", "", "auto"]:
@@ -247,7 +250,7 @@ def verify_face(**kwargs):
                  # Lazy import for safety
                  from smart_attendance.smart_attendance.api.face_verification import mark_attendance_by_face
                  
-                 return mark_attendance_by_face(employee, image_base64, log_type, confidence_threshold)
+                 return mark_attendance_by_face(employee, image_base64, log_type, confidence_threshold, verify_only=verify_only)
              except Exception as e:
                  frappe.log_error(f"Delegation Error: {str(e)}", "Kiosk Debug")
                  return {"ok": False, "message": f"Server Error: {str(e)}"}
@@ -323,13 +326,14 @@ def verify_face(**kwargs):
                     last_type = get_last_log_type(best.employee)
                     final_log_type = "OUT" if last_type == "IN" else "IN"
 
-                frappe.get_doc({
-                    "doctype": "Employee Checkin",
-                    "employee": best.employee,
-                    "log_type": final_log_type, 
-                    "time": frappe.utils.now_datetime(),
-                    "device_id": device_id
-                }).insert(ignore_permissions=True)
+                if not verify_only:
+                    frappe.get_doc({
+                        "doctype": "Employee Checkin",
+                        "employee": best.employee,
+                        "log_type": final_log_type, 
+                        "time": frappe.utils.now_datetime(),
+                        "device_id": device_id
+                    }).insert(ignore_permissions=True)
                 
                 # Fetch name for display
                 emp_name = frappe.db.get_value("Employee", best.employee, "employee_name") or best.employee
@@ -422,17 +426,53 @@ def get_recent_attendance(employee):
     try:
         attendance_list = frappe.get_all("Attendance",
             filters={"employee": employee, "docstatus": 1},
-            fields=["attendance_date", "in_time", "out_time", "status", "working_hours"],
+            fields=["attendance_date", "status", "working_hours", "in_time", "out_time"],
             order_by="attendance_date desc",
-            limit=5
+            limit=5,
+            ignore_permissions=True
         )
         
         # Format for frontend
         data = []
         for att in attendance_list:
-            in_time = format_time(att.in_time) if att.in_time else "--:--"
-            out_time = format_time(att.out_time) if att.out_time else "--:--"
+            # Fallback: Check 'Employee Checkin' if in_time/out_time missing
+            # This handles cases where Attendance is marked 'Present' but times are not synced
+            if not att.get("in_time") or not att.get("out_time"):
+                try:
+                    logs = frappe.get_all("Employee Checkin", filters={
+                        "employee": employee,
+                        "time": ["between", [f"{att.attendance_date} 00:00:00", f"{att.attendance_date} 23:59:59"]]
+                    }, fields=["time", "log_type"], order_by="time asc")
+
+                    if logs:
+                        # First log is IN
+                        if not att.get("in_time"):
+                            att.in_time = logs[0].time
+                        
+                        # Last log is OUT (if multiple)
+                        if not att.get("out_time") and len(logs) > 0:
+                             att.out_time = logs[-1].time
+                             
+                    # Recalculate working hours if possible and missing
+                    if not att.get("working_hours") and att.get("in_time") and att.get("out_time"):
+                         start = get_datetime(att.in_time)
+                         end = get_datetime(att.out_time)
+                         diff = (end - start).total_seconds() / 3600.0
+                         if diff > 0:
+                             att.working_hours = diff
+                except Exception as e:
+                    frappe.log_error(f"Error fetching logs fallback: {e}")
+
+            in_time = format_time(att.get("in_time"))
+            out_time = format_time(att.get("out_time"))
             
+            # Format working hours
+            wh = ""
+            if att.get("working_hours"):
+                try:
+                    wh = f"{float(att.working_hours):.1f}h"
+                except: pass
+
             data.append({
                 "date": formatdate(att.attendance_date),
                 "raw_date": att.attendance_date,
@@ -440,7 +480,7 @@ def get_recent_attendance(employee):
                 "status": att.status,
                 "in_time": in_time,
                 "out_time": out_time,
-                "working_hours": f"{float(att.working_hours):.1f}h" if att.working_hours else ""
+                "working_hours": wh
             })
             
         return data
