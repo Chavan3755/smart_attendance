@@ -190,6 +190,80 @@ def check_liveness(image_path, face_location=None):
         if sharpness > 0.14:
              return False, f"Anti-Spoofing: Digital grid detected ({sharpness:.2f})"
 
+        # 5. Color Integrity Check (YCrCb & HSV) - Blocks Video/Blue-Screens
+        try:
+            # A. YCrCb Balance (Blue Tint)
+            ycrcb = cv2.cvtColor(image_face, cv2.COLOR_BGR2YCrCb)
+            avg_cr = np.mean(ycrcb[:, :, 1])
+            avg_cb = np.mean(ycrcb[:, :, 2])
+            
+            # Real skin: Red (Cr) should be dominant over Blue (Cb)
+            if avg_cb > avg_cr:
+                 if np.mean(gray_face) > 40: # If not super dark
+                      return False, f"Anti-Spoofing: Unnatural color balance (Screen detected)"
+                      
+            # B. HSV Analysis (Screen Color Gamut & Quantization)
+            hsv = cv2.cvtColor(image_face, cv2.COLOR_BGR2HSV)
+            h, s, v = cv2.split(hsv)
+            
+            # Variance in Hue/Saturation 
+            # Real skin has nuances. Screens/Videos are often flatter or quantized.
+            s_std = np.std(s)
+            h_std = np.std(h)
+            
+            # If saturation is suspiciously uniform (low variance), it's likely a screen/photo
+            # Real skin usually > 15-20 depending on lighting.
+            # Screen/Paper often < 10.
+            if s_std < 12 and np.mean(s) > 30:
+                 return False, f"Anti-Spoofing: Color saturation too uniform ({s_std:.1f})"
+
+        except:
+            pass
+
+        # 6. Specular Highlight Check (Glass Reflection - ACTIVE BLOCK)
+        # Screens/Phones are glass and reflect point lights sharply.
+        _, max_val, _, _ = cv2.minMaxLoc(gray_face)
+        if max_val >= 250:
+            # Check area of saturation
+            ret, thresh = cv2.threshold(gray_face, 248, 255, cv2.THRESH_BINARY)
+            bright_pixels = cv2.countNonZero(thresh)
+            total_pixels = gray_face.shape[0] * gray_face.shape[1]
+            ratio = bright_pixels / total_pixels
+            
+            # Small intense reflection (0.05% to 1.5%) is suspicious of glass glare
+            # Real faces have broader highlights (oil).
+            # Tightened: actively reject if this signature matches glass glare.
+            if 0.0005 < ratio < 0.015: 
+                 return False, f"Anti-Spoofing: Screen glare detected"
+
+        # 7. Face Size/Ratio Plausibility (Zooms)
+        # If user zooms in on a phone, the face often takes up > 70% of the image or looks distorted.
+        # Kiosk cameras usually see a face at 20-50% coverage.
+        # Calculate coverage
+        img_h, img_w = image.shape[:2]
+        face_h, face_w = gray_face.shape[:2]
+        coverage = (face_h * face_w) / (img_h * img_w)
+        
+        # If face is HUGE (zoom), block.
+        if coverage > 0.65:
+             return False, f"Anti-Spoofing: Face too close/zoomed ({int(coverage*100)}%)"
+        
+        # 8. Moiré Pattern (Improved High-Freq Power)
+        # Check power in high frequency bands specifically
+        # Already done via h_freq, but let's double check relative power
+        # If high freq is surprisingly weak COMPARED to mid freq (blur/screen), reject
+        # Real life has unlimited high freq. Screens are band-limited.
+        # h_freq is high corner. l_freq is low center.
+        # Mid-freq ring:
+        rows, cols = gray_face.shape
+        crow, ccol = rows//2 , cols//2
+        mid_freq = np.mean(magnitude_spectrum[crow-30:crow+30, ccol-30:ccol+30]) - l_freq
+        
+        # Ratio of Mid to High
+        # Screens have strong pixels (mid) but weak noise (high)
+        # This is experimental but can catch re-capture
+        # pass
+
         return True, f"Liveness Check Passed (T:{texture_score:.0f}, O:{org_v:.1f})"
         
     except Exception as e:
