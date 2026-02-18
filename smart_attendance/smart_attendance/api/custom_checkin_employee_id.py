@@ -34,22 +34,45 @@ def mark_kiosk_attendance(employee, log_type=None, timestamp=None):
         frappe.db.commit()
 
         # 1. ESTABLISH CURRENT TIME (Consistently for Cooldown & Insert)
-        # Use Frontend Timestamp if available to ensure Cooldown checks against "Wall Clock" time
-        # This fixes "Please wait 6840s" errors caused by Server-Client Timezone mismatches.
-        checkin_time = now_datetime()
+        # Fetch System Timezone
+        try:
+            import pytz
+            from datetime import datetime
+            
+            system_tz = frappe.db.get_single_value("System Settings", "time_zone") or "Asia/Kolkata"
+            target_tz = pytz.timezone(system_tz)
+            utc_tz = pytz.timezone("UTC")
+            
+            # Default to now in target tz (Naive for DB)
+            checkin_time = datetime.now(target_tz).replace(tzinfo=None)
+        except:
+            # Fallback if pytz missing
+            checkin_time = now_datetime()
+
         if timestamp:
             try:
                 # Parse string to datetime
                 parsed_ts = get_datetime(timestamp)
                 
-                # If it has timezone info, convert to system local time then strip
-                if parsed_ts.tzinfo:
-                    parsed_ts = parsed_ts.astimezone(None).replace(tzinfo=None)
+                # If naive, assume UTC if it comes from ISO string (Z-ending usually loses Z in get_datetime if not careful, but usually it's parsable)
+                # get_datetime returns naive if no cache, or aware? 
+                # safer to assume input is UTC if it looks like it, or trust get_datetime.
                 
-                checkin_time = parsed_ts
+                if not parsed_ts.tzinfo:
+                     # If format was YYYY-MM-DD HH:MM:SS and considered naive, we assume it was sent as UTC or Server Time?
+                     # Let's assume it matches the server's expectation. But usually Kiosk sends UTC ISO.
+                     # If we assume UTC:
+                     parsed_ts = utc_tz.localize(parsed_ts)
+                
+                # Convert to Target TZ
+                parsed_ts = parsed_ts.astimezone(target_tz)
+                
+                # Strip tzinfo for DB storage (Frappe stores naive local)
+                checkin_time = parsed_ts.replace(tzinfo=None)
+                
             except Exception as e:
                 frappe.log_error(f"Timestamp Parse Error: {e}", "Kiosk Debug")
-                # Fallback to server time stays as now_datetime()
+                # Keep default checkin_time
 
         # 2. COOLDOWN CHECK (Using established checkin_time)
         last_log_time = frappe.db.get_value("Employee Checkin", 

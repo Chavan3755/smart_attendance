@@ -525,7 +525,17 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
 
             log = frappe.new_doc("Face Attendance Log")
             log.employee = detected_employee
-            log.time = now_datetime()
+            # Force System Timezone for consistency
+            try:
+                import pytz
+                from datetime import datetime
+                system_tz = frappe.db.get_single_value("System Settings", "time_zone") or "Asia/Kolkata"
+                tz = pytz.timezone(system_tz)
+                log_time = datetime.now(tz).replace(tzinfo=None)
+            except:
+                log_time = now_datetime()
+
+            log.time = log_time
             log.log_type = final_log_type
             log.distance = match_distance
             log.details = f"Liveness: Pass, Dist: {match_distance:.4f}"
