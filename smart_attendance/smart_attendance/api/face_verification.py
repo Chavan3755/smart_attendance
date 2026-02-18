@@ -162,35 +162,32 @@ def check_liveness(image_path, face_location=None):
         
         # REJECTION CRITERIA (ADAPTIVE BIOMETRIC)
         # 1. Base Texture Floor
-        # Relaxed from 11 to 9 for smoother skin/lower light
-        if texture_score < 9:
+        # Tightened from 9 to 18 to block smooth phone screens/photos
+        if texture_score < 18:
             return False, f"Anti-Spoofing: Natural texture too low ({texture_score:.1f})"
             
         # 2. Regional Variance (The "Flat" Check)
         # Real faces > 0.4. Photos/Screens < 0.3.
         # Strict if low detail.
-        # Relaxed limits: 0.30 (low detail) / 0.25 (standard)
-        v_limit = 0.30 if is_low_detail else 0.25
+        # Tightened to 0.45/0.35
+        v_limit = 0.45 if is_low_detail else 0.35
         if org_v < v_limit:
              return False, f"Anti-Spoofing: Surface too uniform ({org_v:.2f})"
 
         # 3. Frequency Ratio Check 
         # Real phone hits ~42. Photos hit 39-45.
         # High quality cameras can hit 50+. 
-        # Valid User Log: 50.3. 
-        # We set limit to 55 to allow valid users but block high-freq screens (60+).
-        r_limit = 56 if is_low_detail else 55
-        
-        # REMOVED BYPASS: High contrast screens were exploiting the organic variance bypass.
-        
+        # Tightened to 50 to block high-freq screens.
+        r_limit = 50 if is_low_detail else 47
+         
         if rel_freq > r_limit:
             return False, f"Anti-Spoofing: Secondary scan failed ({rel_freq:.1f})"
             
         # 4. Signal Sharpness (Digital Grid)
         # Valid User: 0.12.
         # Screen: > 0.18 usually.
-        # Tightened to 0.17 to catch sharp digital replays.
-        if sharpness > 0.17:
+        # Tightened further to 0.14 to block recent Retina exploit (0.18).
+        if sharpness > 0.14:
              return False, f"Anti-Spoofing: Digital grid detected ({sharpness:.2f})"
 
         return True, f"Liveness Check Passed (T:{texture_score:.0f}, O:{org_v:.1f})"
