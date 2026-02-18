@@ -431,6 +431,44 @@ def get_recent_attendance(employee):
             limit=5,
             ignore_permissions=True
         )
+
+        # Check if today's attendance is already in the list
+        today_date = get_datetime(nowdate()).date()
+        has_today = False
+        for att in attendance_list:
+            # att.attendance_date can be date or str
+            att_date = get_datetime(att.attendance_date).date()
+            if att_date == today_date:
+                has_today = True
+                break
+        
+        # If no Attendance record for today, check Employee Checkin
+        if not has_today:
+            today_checkins = frappe.get_all("Employee Checkin", filters={
+                "employee": employee,
+                "time": ["between", [f"{today_date} 00:00:00", f"{today_date} 23:59:59"]]
+            }, fields=["time", "log_type"], order_by="time asc")
+
+            if today_checkins:
+                # Construct synthetic record
+                first_log = today_checkins[0]
+                last_log = today_checkins[-1] if len(today_checkins) > 1 else None
+                
+                # Calculate synthetic working hours
+                wh = 0
+                if last_log and last_log.time != first_log.time:
+                     start = get_datetime(first_log.time)
+                     end = get_datetime(last_log.time)
+                     wh = (end - start).total_seconds() / 3600.0
+
+                synthetic_att = frappe._dict({
+                    "attendance_date": today_date,
+                    "status": "Present",
+                    "in_time": first_log.time,
+                    "out_time": last_log.time if last_log and last_log.time != first_log.time else None,
+                    "working_hours": wh
+                })
+                attendance_list.insert(0, synthetic_att)
         
         # Format for frontend
         data = []

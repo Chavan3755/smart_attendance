@@ -447,7 +447,9 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
                         "employee_name": frappe.db.get_value("Employee", detected_employee, "employee_name"),
                         "log_type": final_log_type,
                         "distance": match_distance,
-                        "message": f"Welcome back {detected_employee}"
+                        "message": f"Welcome back {detected_employee}",
+                        "name": kiosk_result.get("name"),
+                        "time": kiosk_result.get("time")
                     }
 
             log = frappe.new_doc("Face Attendance Log")

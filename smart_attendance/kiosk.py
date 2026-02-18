@@ -9,14 +9,14 @@ def ping():
     return {"message": "pong"}
 
 @frappe.whitelist(allow_guest=True)
-def verify_face(image_base64=None, log_type=None, device_id=None, device_secret=None, confidence_threshold=0.45, employee=None, timestamp=None):
+def verify_face(image_base64=None, log_type=None, device_id=None, device_secret=None, confidence_threshold=0.45, employee=None, timestamp=None, verify_only=False):
     """
     Kiosk calls this endpoint (POST). 
     Explicit arguments used to ensure FormData parsing works correctly.
     """
     try:
         # Debug: Log keys to verify reception
-        frappe.log_error(f"Kiosk Verify Called (Explict Args). Device: {device_id}, Log: {log_type}, Time: {timestamp}", "Kiosk Debug")
+        frappe.log_error(f"Kiosk Verify Called (Explict Args). Device: {device_id}, Log: {log_type}, Time: {timestamp}, Verify Only: {verify_only}", "Kiosk Debug")
         
         # Args are now local variables
         if not confidence_threshold:
@@ -34,6 +34,10 @@ def verify_face(image_base64=None, log_type=None, device_id=None, device_secret=
                 confidence_threshold = 0.45
         except:
              confidence_threshold = 0.45
+
+        # Sanitize verify_only (handle JS "true" string)
+        if isinstance(verify_only, str):
+            verify_only = (verify_only.lower() == "true")
         
         # 0. WEB KIOSK DELEGATION
         # Treat "null" string as None
@@ -45,28 +49,16 @@ def verify_face(image_base64=None, log_type=None, device_id=None, device_secret=
                  return {"ok": False, "message": "No image provided for Kiosk verification"}
 
              try:
-                 # Dynamic import to avoid UnboundLocalError and path issues
-                 verification_method = None
-                 
-                 # Try Path 1
-                 try:
-                     from smart_attendance.smart_attendance.api.face_verification import mark_attendance_by_face
-                     verification_method = mark_attendance_by_face
-                 except ImportError:
-                     pass
-                 
-                 # Try Path 2
-                 if not verification_method:
-                     try:
-                         from smart_attendance.api.face_verification import mark_attendance_by_face
-                         verification_method = mark_attendance_by_face
-                     except ImportError:
-                         pass
+                 # Explicit import to avoid path issues
+                 from smart_attendance.smart_attendance.api.face_verification import mark_attendance_by_face
+                 verification_method = mark_attendance_by_face
                  
                  if not verification_method:
                      return {"ok": False, "message": "Server Error: Verification module not found"}
                  
-                 return verification_method(employee, image_base64, log_type, confidence_threshold, timestamp=timestamp)
+                 return verification_method(employee, image_base64, log_type, confidence_threshold, timestamp=timestamp, verify_only=verify_only)
+             except ImportError:
+                 return {"ok": False, "message": "Server Error: face_verification module import failed (path error)"}
              except Exception as e:
                  frappe.log_error(f"Delegation Error: {str(e)}", "Kiosk Debug")
                  return {"ok": False, "message": f"Server Error: {str(e)}"}
