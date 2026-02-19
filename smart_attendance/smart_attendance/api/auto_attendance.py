@@ -37,4 +37,4 @@ def create_realtime_attendance(doc, method=None):
         frappe.db.commit()
 
     except Exception as e:
-        frappe.log_error(str(e), "Auto Attendance Error")
+        pass

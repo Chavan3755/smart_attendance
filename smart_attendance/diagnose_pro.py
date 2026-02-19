@@ -5,7 +5,7 @@ import frappe
 
 # Initialize frappe (assuming we are running with bench execute, frappe is already init, but strict/standalone check requires init)
 if not frappe.db:
-    frappe.init(site="nexovate.co.in")
+    frappe.init(site="demo.dexciss.tech")
     frappe.connect()
 
 print("--- DIAGNOSTICS START ---")

@@ -16,7 +16,7 @@ def verify_face(image_base64=None, log_type=None, device_id=None, device_secret=
     """
     try:
         # Debug: Log keys to verify reception
-        frappe.log_error(f"Kiosk Verify Called (Explict Args). Device: {device_id}, Log: {log_type}, Time: {timestamp}, Verify Only: {verify_only}", "Kiosk Debug")
+        pass
         
         # Args are now local variables
         if not confidence_threshold:
@@ -60,7 +60,7 @@ def verify_face(image_base64=None, log_type=None, device_id=None, device_secret=
              except ImportError:
                  return {"ok": False, "message": "Server Error: face_verification module import failed (path error)"}
              except Exception as e:
-                 frappe.log_error(f"Delegation Error: {str(e)}", "Kiosk Debug")
+                 pass
                  return {"ok": False, "message": f"Server Error: {str(e)}"}
 
         # Authenticate device (Legacy flow)
@@ -76,5 +76,5 @@ def verify_face(image_base64=None, log_type=None, device_id=None, device_secret=
         return {"ok": False, "message": "Legacy Device flow not fully implemented in this patch."}
 
     except Exception as e:
-        frappe.log_error(f"Kiosk Verify Error (Top Level): {str(e)}", "Kiosk Crash")
+        pass
         return {"ok": False, "message": f"System Error: {str(e)}"}

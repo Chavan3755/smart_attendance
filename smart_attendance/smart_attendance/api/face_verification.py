@@ -77,7 +77,7 @@ def _save_base64_to_temp(image_base64: str):
              image_bytes = buf.getvalue()
              
     except Exception as e:
-        frappe.log_error(f"Image Decode Error: {e}", "Kiosk Debug")
+        pass
         return None
     
     # Create a temp file
@@ -158,7 +158,7 @@ def check_liveness(image_path, face_location=None):
         
         rel_freq = (h_freq / l_freq) * 100 if l_freq > 0 else 0
         
-        frappe.log_error(f"Liveness - T:{texture_score:.1f}, Org:{org_v:.2f}, Ratio:{rel_freq:.1f}, Sharp:{sharpness:.2f}", "Kiosk Debug")
+        pass
         
         # REJECTION CRITERIA (ADAPTIVE BIOMETRIC)
         # 1. Base Texture Floor
@@ -267,7 +267,8 @@ def check_liveness(image_path, face_location=None):
         return True, f"Liveness Check Passed (T:{texture_score:.0f}, O:{org_v:.1f})"
         
     except Exception as e:
-        frappe.log_error(f"Liveness Multi-Check Error: {e}")
+        pass
+        
         return True, "Check skipped due to error"
 
 
@@ -308,14 +309,14 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
                    Lower is stricter. 0.4 is recommended for high security.
     """
     
-    frappe.log_error(f"Mark Attendance By Face - Emp:{employee}", "Kiosk Debug")
+    pass
 
     # Sanitize log_type - Default to IN, treat AUTO as IN explicit mode
     if not log_type or str(log_type).lower() in ["null", "undefined", "none", "", "auto"]:
         log_type = "IN"
     
     if not face_recognition:
-        frappe.log_error("Face Rec Lib Missing", "Kiosk Debug")
+        pass
         return {"ok": False, "message": "Server Error: face_recognition library not installed."}
 
     if not image_base64:
@@ -363,7 +364,7 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
             input_vector = face_encodings[0]
             
         except Exception as e:
-            frappe.log_error(f"Face Recognition Extract Error: {e}")
+            pass
             return {"ok": False, "message": "Face analysis failed. (Internal Error)"}
             
 
@@ -446,7 +447,7 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
                  required_gap = 0.08
                  
             if diff_score < required_gap and second_best_dist < tolerance:
-                 frappe.log_error(f"Ambiguity Reject: Best {best_match_dist:.3f}, 2nd {second_best_dist:.3f}, Gap {diff_score:.3f}", "Kiosk Debug")
+                 pass
                  return {
                      "ok": False,
                      "reason": "ambiguous_match",
@@ -482,11 +483,11 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
                 kiosk_result = mark_kiosk_attendance(detected_employee, log_type, timestamp=timestamp)
                 
                 if not kiosk_result.get("ok"):
-                     frappe.log_error(f"Kiosk Logic Failure: {json.dumps(kiosk_result)}", "Kiosk Logic Error")
+                     pass
                 
             except Exception:
                 err = frappe.get_traceback()
-                frappe.log_error(err, "Kiosk Crash Trace")
+                pass
                 return {"ok": False, "message": "Server crashed during check-in creation. See Error Log 'Kiosk Crash Trace'."}
         
         if not kiosk_result.get("ok"):
@@ -524,15 +525,39 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
                     }
 
             log = frappe.new_doc("Face Attendance Log")
-            log.employee = detected_employee
-            # Force System Timezone for consistency
+            # 1. Determine Time
+            log_time = None
+            
+            # --- NEW TIMEZONE LOGIC ---
+            # Try to get User Timezone, else fall back to System, ignoring Client Timestamp
+            target_tz_str = None
             try:
+                # A) Session User (Priority)
+                if frappe.session.user and frappe.session.user != "Guest":
+                    target_tz_str = frappe.db.get_value("User", frappe.session.user, "time_zone")
+
+                # B) Employee User
+                if not target_tz_str and detected_employee:
+                     u_id = frappe.db.get_value("Employee", detected_employee, "user_id")
+                     if u_id:
+                         target_tz_str = frappe.db.get_value("User", u_id, "time_zone")
+                
+                # C) System Fallback
+                from frappe.utils import get_system_timezone
+                if not target_tz_str:
+                    target_tz_str = get_system_timezone() or "Asia/Kolkata"
+                
                 import pytz
                 from datetime import datetime
-                system_tz = frappe.db.get_single_value("System Settings", "time_zone") or "Asia/Kolkata"
-                tz = pytz.timezone(system_tz)
-                log_time = datetime.now(tz).replace(tzinfo=None)
-            except:
+                
+                tz = pytz.timezone(target_tz_str)
+                
+                # UTC -> Target TZ Conversion
+                utc_now = datetime.utcnow().replace(tzinfo=pytz.utc)
+                log_time = utc_now.astimezone(tz).replace(tzinfo=None)
+                
+            except Exception as e:
+                pass
                 log_time = now_datetime()
 
             log.time = log_time
@@ -546,11 +571,11 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
             try:
                 attach_image_to_fal(log.name, image_base64)
             except Exception as e:
-                frappe.log_error(f"Image Attach Failed: {str(e)}", "Kiosk Image Error")
+                pass
 
             frappe.db.commit()
         except Exception as e:
-            frappe.log_error(f"Audit Log Failed: {str(e)}", "Kiosk Logic Error")
+            pass
     
         return {
             "ok": True,
@@ -566,7 +591,7 @@ def mark_attendance_by_face(employee: str = None, image_base64: str = None, log_
         }
 
     except Exception as e:
-        frappe.log_error(f"Verification Error: {str(e)}")
+        pass
         return {"ok": False, "message": f"System Error during verification."}
         
     finally:

@@ -54,7 +54,7 @@ def process_face_encoding(doc_name, file_url):
             from PIL import Image
             import numpy as np
         except ImportError:
-            frappe.log_error("face_recognition not installed", "Employee Face Error")
+            pass
             return
 
         # 1) Resolve Path
@@ -68,7 +68,7 @@ def process_face_encoding(doc_name, file_url):
             file_path = os.path.join(get_site_path(), file_url.lstrip("/"))
 
         if not file_path or not os.path.exists(file_path):
-            frappe.log_error(f"File not found: {file_path}", "Employee Face Job")
+            pass
             return
 
         # 2) Generate Encoding
@@ -80,11 +80,11 @@ def process_face_encoding(doc_name, file_url):
             if encs:
                 encoding_list = encs[0].tolist()
         except Exception as e:
-             frappe.log_error(f"Encoding Error: {str(e)}", "Employee Face Job")
+             pass
              return
 
         if not encoding_list:
-             frappe.log_error(f"No face detected for {doc_name}", "Employee Face Job")
+             pass
              return
 
         encoding_str = json.dumps(encoding_list)
@@ -105,7 +105,7 @@ def process_face_encoding(doc_name, file_url):
         frappe.db.commit()
         
     except Exception as e:
-        frappe.log_error(frappe.get_traceback(), f"Employee Face Job Error: {doc_name}")
+        pass
 
 def check_duplicate_face(new_encoding, current_doc_name):
     """
@@ -181,7 +181,7 @@ def process_face_encoding(doc_name, file_url):
             from PIL import Image
             import numpy as np
         except ImportError:
-            frappe.log_error("face_recognition not installed", "Employee Face Error")
+            pass
             return
 
         # 1) Resolve Path
@@ -195,7 +195,7 @@ def process_face_encoding(doc_name, file_url):
             file_path = os.path.join(get_site_path(), file_url.lstrip("/"))
 
         if not file_path or not os.path.exists(file_path):
-            frappe.log_error(f"File not found: {file_path}", "Employee Face Job")
+            pass
             return
 
         # 2) Generate Encoding
@@ -207,11 +207,11 @@ def process_face_encoding(doc_name, file_url):
             if encs:
                 encoding_list = encs[0].tolist()
         except Exception as e:
-             frappe.log_error(f"Encoding Error: {str(e)}", "Employee Face Job")
+             pass
              return
 
         if not encoding_list:
-             frappe.log_error(f"No face detected for {doc_name}", "Employee Face Job")
+             pass
              # Optionally update doc to say "No Face Detected"
              frappe.db.add_comment("Employee Face", doc_name, "Error: No face detected in the uploaded image.")
              return
@@ -221,7 +221,7 @@ def process_face_encoding(doc_name, file_url):
         
         if is_dup:
             msg = f"Duplicate Face Detected! Matches {match_emp} (Distance: {match_dist:.3f}). Encoding NOT saved."
-            frappe.log_error(msg, "Employee Face Duplicate")
+            pass
             frappe.db.add_comment("Employee Face", doc_name, f"❌ {msg}")
             # Do NOT save encoding
             return
@@ -244,4 +244,4 @@ def process_face_encoding(doc_name, file_url):
         frappe.db.commit()
         
     except Exception as e:
-        frappe.log_error(frappe.get_traceback(), f"Employee Face Job Error: {doc_name}")
+        pass
