@@ -140,12 +140,7 @@ def mark_kiosk_attendance(employee, log_type=None, timestamp=None):
         # TRACE 5
         pass
 
-        # Auto-create Attendance Record for 'IN'
-        if final_log_type == "IN":
-            try:
-                # Basic attendance creation
-                _create_attendance_if_missing(employee_id, checkin_time)
-            except: pass
+
         
         # TRACE 6
         pass
@@ -168,17 +163,4 @@ def mark_kiosk_attendance(employee, log_type=None, timestamp=None):
         frappe.db.commit() # Ensure error is logged
         return {"ok": False, "message": err_msg}
 
-def _create_attendance_if_missing(employee_id, checkin_time):
-    try:
-        today = nowdate()
-        if not frappe.db.exists("Attendance", {"employee": employee_id, "attendance_date": today}):
-            doc = frappe.get_doc({
-                "doctype": "Attendance",
-                "employee": employee_id,
-                "attendance_date": today,
-                "status": "Present",
-                "in_time": checkin_time
-            })
-            doc.insert(ignore_permissions=True)
-    except Exception as e:
-        pass
+
