@@ -17,18 +17,17 @@
         window.dev_server = false;
         window.socketio_port = 9000;
 
-        // Mobile detection - add class to body immediately
-        (function () {
-            // FORCE MOBILE MODE FOR ALL DEVICES
-            // const isMobile = window.innerWidth <= 900 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-            const isMobile = true;
-            if (isMobile) {
+        const isMobile = true;
+        if (isMobile) {
+            if (document.body) {
+                document.body.classList.add('is-mobile');
+            } else {
                 document.addEventListener('DOMContentLoaded', function () {
                     document.body.classList.add('is-mobile');
                     console.log('Mobile detected (Forced), added is-mobile class');
                 });
             }
-        })();
+        }
     </script>
 </head>
 
@@ -1041,7 +1040,7 @@
 
         <!-- Mobile Wrapper -->
         <div id="mobile-app"
-            style="display:none; position:fixed; inset:0; background:#020617; color:white; font-family:Inter, sans-serif; text-align:center; padding:24px; z-index:9000; overflow-y:auto; flex-direction:column;">
+            style="display:flex; position:fixed; inset:0; background:#020617; color:white; font-family:Inter, sans-serif; text-align:center; padding:24px; z-index:9000; overflow-y:auto; flex-direction:column;">
 
             <!-- Camera Background Layer -->
             <div id="mobile-camera-layer" style="position:fixed; inset:0; z-index:0; display:none;">
@@ -1355,7 +1354,7 @@
         </div>
     </div>
 
-    <div id="desktop-app" class="page">
+    <div id="desktop-app" class="page" style="display: none;">
         <div class="viewport">
             <div class="outer">
                 <div class="card" id="kioskCard" role="main" aria-label="Aurora Motion Kiosk">
@@ -1534,7 +1533,8 @@
             const debugBanner = document.getElementById('debug-banner');
             if (debugBanner) debugBanner.innerText += " JS Started...";
             /* ---------- Elements ---------- */
-            const isMobileMode = document.body.classList.contains('is-mobile');
+            document.body.classList.add('is-mobile');
+            const isMobileMode = true; // document.body.classList.contains('is-mobile');
             const kioskCard = document.getElementById('kioskCard');
             // Dynamic camera selection
             const camera = isMobileMode ? document.getElementById('camera-mobile') : document.getElementById('camera');
@@ -1653,7 +1653,8 @@
                         // Bind Done button to reload
                         try {
                             document.getElementById('btn-m-list-done').onclick = () => {
-                                window.location.reload();
+                                document.getElementById('m-list-modal').style.display = 'none';
+                                detecting = true;
                             };
                         } catch (e) { }
                         const data = await callURL("smart_attendance.api.get_recent_attendance", { employee: employeeId });
@@ -1668,7 +1669,8 @@
                         // Bind Done button to reload
                         try {
                             document.getElementById('btn-m-list-done').onclick = () => {
-                                window.location.reload();
+                                document.getElementById('m-list-modal').style.display = 'none';
+                                detecting = true;
                             };
                         } catch (e) { }
                         const data = await callURL("smart_attendance.api.get_employee_holidays", { employee: employeeId });
@@ -1690,8 +1692,8 @@
                         hint.style.color = "white";
                         hint.style.border = "1px solid rgba(255,255,255,0.3)";
                     }
-                    // Hard reload as requested
-                    window.location.reload();
+                    // Hard reload as requested removed, reset detection gracefully instead
+                    // window.location.reload();
                 };
                 document.getElementById('btn-m-success-close').onclick = () => {
                     document.getElementById('m-success-modal').style.display = 'none';
@@ -2682,8 +2684,9 @@
 
                 // Make modal persistent - only close on OK button click
                 document.getElementById('modalOkBtn').onclick = () => {
-                    // HARD RELOAD as requested by user
-                    window.location.reload();
+                    // Reset detection gracefully
+                    document.getElementById('dailyLogsModal').classList.remove('active');
+                    detecting = true;
                 };
             } // End fetchAndShowDailyLogs
 
