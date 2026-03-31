@@ -1,3 +1,2981 @@
-<div id="face-kiosk-root" style="padding:8px;">
-  <iframe src="/face_kiosk" style="width:100%; height:90vh; border:none;"></iframe>
-</div>
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <title>Face Attendance Kiosk — Aurora Motion</title>
+  <link rel="shortcut icon" href="/assets/frappe/images/frappe-favicon.svg" type="image/x-icon">
+
+  <script>
+    window.frappe = {};
+    frappe.ready_events = [];
+    frappe.ready = function (fn) {
+      // Direct execute
+      fn();
+    }
+    window.dev_server = false;
+    window.socketio_port = 9000;
+
+    // Mobile detection - add class to body immediately
+    (function () {
+      const isMobile = true;
+      if (isMobile) {
+        if (document.body) {
+          document.body.classList.add('is-mobile');
+        } else {
+          document.addEventListener('DOMContentLoaded', function () {
+            document.body.classList.add('is-mobile');
+            console.log('Mobile detected (Forced), added is-mobile class');
+          });
+        }
+      }
+    })();
+  </script>
+</head>
+
+<body class="no-sidebar">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
+    integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"
+    defer></script>
+
+  <!-- CSRF Token -->
+  <script>
+    // Helper to get cookie
+    function getCookie(name) {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) return parts.pop().split(';').shift();
+    }
+
+    frappe.csrf_token = "{{ csrf_token }}";
+
+    // Fallback: If template token is empty, try to get from cookie (often 'sid' or specific csrf cookie depending on version)
+    if (!frappe.csrf_token || frappe.csrf_token === "None") {
+      console.log("CSRF from template is empty, checking cookie...");
+      // In some Frappe versions, it's not in the cookie directly as a simple token, 
+      // but usually the backend provides it. 
+      // Let's rely on the reload mechanism if it's missing, but ensure we don't send "None".
+      frappe.csrf_token = null;
+    }
+  </script>
+
+  <div id="page-content">
+    <!-- Merged: Aurora Motion UI + face-api + Frappe attendance + Theme customizer + Auto-capture + 3D notify + Holidays -->
+    <style>
+      :root {
+        --bg-1: #0f172a;
+        --bg-2: #020617;
+        --primary: #10b981;
+        --secondary: #f59e0b;
+        --surface-1: #1e293b;
+        --surface-2: #334155;
+        --text-main: #ffffff;
+        --text-muted: #94a3b8;
+        --radius: 24px;
+        --font-main: 'Inter', system-ui, -apple-system, sans-serif;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: linear-gradient(180deg, var(--bg-1), var(--bg-2));
+        color: var(--text-main);
+        font-family: var(--font-main);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      #camera-hint {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.45);
+        padding: 10px 16px;
+        border-radius: 10px;
+        font-size: 15px;
+        color: #e5e7eb;
+        pointer-events: none;
+        z-index: 6;
+      }
+
+      #face-guide {
+        position: absolute;
+        width: 180px;
+        height: 240px;
+        border: 2px dashed rgba(255, 255, 255, 0.4);
+        border-radius: 50%;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        z-index: 5;
+      }
+
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: linear-gradient(180deg, var(--bg-1), var(--bg-2));
+        color: var(--fg);
+        font-family: Inter, Arial, sans-serif;
+      }
+
+      /* Full-screen mode on mobile AND DESKTOP (Forced) */
+      @media (max-width: 9999px) {
+        body {
+          overflow: hidden;
+        }
+
+        .page {
+          padding: 0 !important;
+          margin: 0 !important;
+          height: 100vh;
+          display: flex;
+          align-items: stretch;
+        }
+
+        .viewport {
+          width: 100% !important;
+          max-width: 100% !important;
+          height: 100vh;
+          display: flex;
+          flex-direction: column;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+
+        .outer {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          border-radius: 0 !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          box-shadow: none !important;
+          border: none !important;
+          background: transparent !important;
+        }
+
+        .card {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          border-radius: 0 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          background: transparent !important;
+          box-shadow: none !important;
+          border: none !important;
+        }
+
+        /* Hide header globally */
+        .header {
+          display: none !important;
+        }
+
+        .layout {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          margin: 0 !important;
+          padding: 0 !important;
+          gap: 0 !important;
+        }
+
+        .left {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+
+        .camera {
+          flex: 1;
+          height: auto !important;
+          margin: 0 !important;
+          border-radius: 0 !important;
+        }
+
+        .camera-inner {
+          border-radius: 0 !important;
+          inset: 0 !important;
+        }
+
+        /* Make controls fixed at bottom */
+        .controls {
+          position: fixed;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          margin: 0 !important;
+          padding: 20px;
+          background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 70%, transparent 100%);
+          z-index: 100;
+        }
+
+        #inout_btn {
+          width: 100%;
+          padding: 20px;
+          font-size: 18px;
+          font-weight: 600;
+          border-radius: 16px;
+        }
+      }
+
+
+      /* Layout */
+      .page {
+        display: flex;
+        justify-content: center;
+        padding: 40px 12px;
+      }
+
+      /* Class-based mobile rules (in addition to media query) */
+      body.is-mobile {
+        overflow: hidden !important;
+      }
+
+      body.is-mobile .page {
+        padding: 0 !important;
+        margin: 0 !important;
+        height: 100vh !important;
+      }
+
+      body.is-mobile .viewport {
+        width: 100% !important;
+        max-width: 100% !important;
+        height: 100vh !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+
+      body.is-mobile .outer {
+        border-radius: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+        background: transparent !important;
+      }
+
+      body.is-mobile .card {
+        border-radius: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        border: none !important;
+      }
+
+      body.is-mobile .header {
+        display: none !important;
+      }
+
+      body.is-mobile .layout {
+        margin: 0 !important;
+        padding: 0 !important;
+        gap: 0 !important;
+        grid-template-columns: 1fr !important;
+      }
+
+      body.is-mobile .left {
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+
+      body.is-mobile .camera {
+        height: auto !important;
+        min-height: calc(100vh - 100px) !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
+      }
+
+      body.is-mobile .camera-inner {
+        border-radius: 0 !important;
+        inset: 0 !important;
+      }
+
+      body.is-mobile .controls {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        margin: 0 !important;
+        padding: 20px !important;
+        background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 70%, transparent 100%) !important;
+        z-index: 100 !important;
+      }
+
+      body.is-mobile #inout_btn {
+        width: 100% !important;
+        padding: 18px !important;
+        font-size: 20px !important;
+        font-weight: 700 !important;
+      }
+
+      body.is-mobile .field,
+      body.is-mobile .mobile-hide {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+      }
+
+      body.is-mobile .right {
+        display: none !important;
+      }
+
+      .viewport {
+        width: 1200px;
+        max-width: calc(100% - 24px);
+        perspective: 1400px;
+      }
+
+      .outer {
+        border-radius: calc(var(--radius) + 8px);
+        padding: 18px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+        box-shadow: 0 24px 80px rgba(2, 6, 23, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.03);
+      }
+
+      .card {
+        margin-top: -16px;
+        border-radius: var(--radius);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+        padding: 14px;
+        transform-style: preserve-3d;
+        transition: transform .22s cubic-bezier(.2, .9, .2, 1), box-shadow .22s;
+        box-shadow: var(--card-shadow);
+        border: 1px solid rgba(255, 255, 255, 0.02);
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .title {
+        font-size: 20px;
+        margin: 0;
+        color: var(--fg);
+        font-weight: 700;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 6px;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        gap: 14px;
+        align-items: flex-start;
+      }
+
+      .left,
+      .right {
+        width: 100%;
+      }
+
+      .field {
+        margin-top: 10px;
+        text-align: left;
+      }
+
+      /* Hide employee ID field on mobile */
+      @media (max-width: 900px) {
+        .field {
+          display: none !important;
+          visibility: hidden !important;
+          height: 0 !important;
+          overflow: hidden !important;
+        }
+
+        .mobile-hide {
+          display: none !important;
+          visibility: hidden !important;
+          height: 0 !important;
+          overflow: hidden !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+      }
+
+      .label {
+        display: block;
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+
+      .input {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        background: rgba(255, 255, 255, 0.02);
+        color: var(--fg);
+        font-size: 15px;
+      }
+
+      .camera {
+        margin-top: 12px;
+        position: relative;
+        border-radius: 10px;
+        overflow: hidden;
+        height: 55vh;
+        min-height: 480px;
+        background: linear-gradient(180deg, rgba(3, 7, 14, 0.65), rgba(2, 6, 12, 0.82));
+        border: 1px solid rgba(255, 255, 255, 0.02);
+      }
+
+      .camera-inner {
+        position: absolute;
+        inset: 8px;
+        border-radius: 8px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(6, 8, 16, 0.6);
+      }
+
+      .camera-bg {
+        position: absolute;
+        inset: 0;
+        background-size: cover;
+        background-position: center;
+        opacity: 0.12;
+        filter: blur(6px) saturate(85%);
+      }
+
+      video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .ribbon {
+        position: absolute;
+        width: 200%;
+        height: 160%;
+        top: -30%;
+        left: -50%;
+        background: linear-gradient(90deg, rgba(124, 58, 237, 0.12), rgba(6, 182, 212, 0.12));
+        transform: rotate(-12deg);
+        animation: floatRibbon 16s linear infinite;
+        filter: blur(28px);
+        opacity: 0.9;
+      }
+
+      @keyframes floatRibbon {
+        0% {
+          transform: translateX(-20%) rotate(-12deg) scale(.96);
+        }
+
+        50% {
+          transform: translateX(8%) rotate(-10deg) scale(1.02);
+        }
+
+        100% {
+          transform: translateX(-20%) rotate(-12deg) scale(.96);
+        }
+      }
+
+      .glow {
+        position: absolute;
+        inset: 8px;
+        border-radius: 8px;
+        pointer-events: none;
+        box-shadow: 0 0 40px rgba(124, 58, 237, 0.12), 0 0 80px rgba(6, 182, 212, 0.06) inset;
+        animation: glowPulse 4.5s ease-in-out infinite;
+        mix-blend-mode: screen;
+      }
+
+      @keyframes glowPulse {
+        0% {
+          filter: blur(8px) brightness(1.02);
+        }
+
+        50% {
+          filter: blur(14px) brightness(1.12);
+        }
+
+        100% {
+          filter: blur(8px) brightness(1.02);
+        }
+      }
+
+      #capture-btn {
+        display: none !important;
+      }
+
+      #preview_toggle {
+        display: none !important;
+      }
+
+      .img-preview {
+        display: none !important;
+      }
+
+      .badge {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        font-weight: 700;
+        font-size: 13px;
+        color: #041226;
+        background: #fff;
+        transform-origin: center;
+        box-shadow: 0 10px 28px rgba(2, 6, 23, 0.12);
+        opacity: 0.98;
+      }
+
+      .badge.in {
+        background: linear-gradient(90deg, rgba(16, 185, 129, 0.95), rgba(6, 182, 212, 0.9));
+      }
+
+      .badge.out {
+        background: linear-gradient(90deg, rgba(245, 158, 11, 0.95), rgba(234, 88, 12, 0.9));
+      }
+
+      .controls {
+        display: flex;
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .capture-btn {
+        flex: 1;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: none;
+        cursor: pointer;
+        font-weight: 700;
+        font-size: 15px;
+        background: linear-gradient(90deg, var(--button-a), var(--button-b));
+        color: #fff;
+        box-shadow: 0 10px 28px rgba(12, 23, 40, 0.28);
+      }
+
+      .small-btn {
+        padding: 10px 12px;
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.02);
+        color: var(--muted);
+        cursor: pointer;
+      }
+
+      .result {
+        margin-top: 12px;
+        padding: 12px;
+        border-radius: 10px;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+        color: var(--fg);
+      }
+
+      .panel {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid rgba(255, 255, 255, 0.02);
+        padding: 12px;
+        border-radius: 10px;
+        color: var(--muted);
+        margin-bottom: 12px;
+      }
+
+      .panel h4 {
+        margin: 0 0 8px 0;
+        color: var(--fg);
+        font-size: 14px;
+      }
+
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 8px;
+      }
+
+      .model-status {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 6px;
+      }
+
+      #bboxCanvas {
+        position: absolute;
+        left: 8px;
+        top: 8px;
+        width: calc(100% - 16px);
+        height: calc(100% - 16px);
+        pointer-events: none;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      .muted {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      @media (max-width:900px) {
+        .viewport {
+          width: 100% !important;
+          max-width: 100% !important;
+        }
+
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .camera {
+          height: auto !important;
+        }
+
+        /* Hide subtitle on mobile */
+        .subtitle {
+          display: none !important;
+        }
+
+        /* Hide title on mobile */
+        .title {
+          display: none !important;
+        }
+      }
+
+      .in-btn {
+        padding: 12px 18px;
+        border-radius: 10px;
+        border: none;
+        font-weight: 700;
+        font-size: 15px;
+        color: #fff;
+        cursor: pointer;
+        background: linear-gradient(90deg, var(--button-a), var(--button-b));
+        box-shadow: 0 10px 25px rgba(34, 197, 94, 0.35);
+      }
+
+      .out-btn {
+        padding: 12px 18px;
+        border-radius: 10px;
+        border: none;
+        font-weight: 700;
+        font-size: 15px;
+        color: #fff;
+        cursor: pointer;
+        background: linear-gradient(90deg, var(--button-a), var(--button-b));
+        box-shadow: 0 10px 25px rgba(239, 68, 68, 0.35);
+      }
+
+      /* 3D notify */
+      .notify3d {
+        position: fixed;
+        top: 28px;
+        left: 50%;
+        transform: translateX(-50%) scale(.8);
+        min-width: 300px;
+        padding: 18px 28px;
+        border-radius: 16px;
+        font-weight: 700;
+        text-align: center;
+        font-size: 17px;
+        z-index: 9999;
+        color: #fff;
+        box-shadow: 0 25px 70px rgba(0, 0, 0, .5);
+        animation: pop3d .35s ease forwards;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .notify3d.in {
+        background: linear-gradient(135deg, #16a34a, #22c55e);
+      }
+
+      .notify3d.out {
+        background: linear-gradient(135deg, #dc2626, #ef4444);
+      }
+
+      .notify3d.error {
+        background: linear-gradient(135deg, #7f1d1d, #b91c1c);
+      }
+
+      @keyframes pop3d {
+        0% {
+          transform: translateX(-50%) scale(.6);
+          opacity: .0
+        }
+
+        100% {
+          transform: translateX(-50%) scale(1);
+          opacity: 1
+        }
+      }
+
+      /* history panel */
+      .history {
+        margin-top: 12px;
+        background: rgba(255, 255, 255, 0.02);
+        padding: 10px;
+        border-radius: 10px;
+        max-height: 220px;
+        overflow: auto;
+      }
+
+      .history .row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+      }
+
+      .history .row:last-child {
+        border-bottom: none;
+      }
+
+      /* Holiday styles */
+      .holiday-item {
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        font-size: 14px;
+      }
+
+      .holiday-item:last-child {
+        border-bottom: none;
+      }
+
+      .holiday-range {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+
+      /* 🔒 Hide all right panels including holidays */
+      .right .panel {
+        display: none !important;
+      }
+
+      /* Hide holidays panel on mobile */
+      @media (max-width: 900px) {
+        .right {
+          display: none !important;
+        }
+      }
+    </style>
+
+    <!-- Daily Logs Modal CSS -->
+    <style>
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        backdrop-filter: blur(8px);
+        z-index: 10000;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+      }
+
+      /* Prevent modal from closing on outside click */
+      .modal-overlay.active {
+        pointer-events: auto;
+        opacity: 1;
+      }
+
+      .modal-overlay.active .modal-content {
+        pointer-events: auto;
+      }
+
+      .modal-content {
+        background: linear-gradient(180deg, rgba(15, 23, 36, 0.95), rgba(7, 16, 41, 0.98));
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        width: 100%;
+        max-width: 100%;
+        border-radius: 20px 20px 0 0;
+        padding: 24px;
+        text-align: center;
+        box-shadow: 0 -10px 50px rgba(0, 0, 0, 0.6);
+        transform: translateY(100%);
+        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        max-height: 75vh;
+        overflow-y: auto;
+        backdrop-filter: blur(12px);
+      }
+
+      .modal-overlay.active .modal-content {
+        transform: translateY(0);
+      }
+
+      .modal-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: #fff;
+        margin-bottom: 20px;
+        letter-spacing: -0.5px;
+      }
+
+      .modal-logs {
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 16px;
+        max-height: 280px;
+        overflow-y: auto;
+        text-align: left;
+        margin-bottom: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        padding: 4px;
+      }
+
+      .modal-log-item {
+        padding: 12px 14px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        font-size: 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: #cbd5e1;
+        background: transparent;
+        margin: 2px;
+        border-radius: 10px;
+        transition: background 0.2s;
+      }
+
+      .modal-log-item:last-child {
+        border-bottom: none;
+      }
+
+      .modal-log-item:hover {
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .modal-log-item span.in {
+        color: #fff;
+        font-weight: 700;
+        background: linear-gradient(90deg, #10b981, #06b6d4);
+        padding: 4px 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+      }
+
+      .modal-log-item span.out {
+        color: #fff;
+        font-weight: 700;
+        background: linear-gradient(90deg, #f59e0b, #ea580c);
+        padding: 4px 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+      }
+
+      .modal-btn {
+        background: linear-gradient(90deg, #7c3aed, #06b6d4);
+        color: #fff;
+        border: none;
+        padding: 14px 32px;
+        font-size: 16px;
+        font-weight: 700;
+        border-radius: 12px;
+        cursor: pointer;
+        transition: opacity 0.2s, transform 0.2s;
+        width: 100%;
+        box-shadow: 0 8px 24px rgba(124, 58, 237, 0.3);
+      }
+
+      .modal-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 32px rgba(124, 58, 237, 0.4);
+      }
+
+      /* Fullscreen toggle button */
+      .fullscreen-toggle {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: white;
+        font-size: 24px;
+        cursor: pointer;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s;
+      }
+
+      .fullscreen-toggle:hover {
+        background: rgba(0, 0, 0, 0.8);
+        transform: scale(1.1);
+      }
+
+      body.is-mobile .fullscreen-toggle {
+        display: flex;
+      }
+
+      /* Half-screen mode */
+      body.half-screen .camera {
+        min-height: 75vh !important;
+        height: 75vh !important;
+        padding-bottom: 80px;
+      }
+
+      body.is-mobile.half-screen .right {
+        display: block !important;
+        height: 25vh;
+        overflow-y: auto;
+        padding-bottom: 20px;
+        /* Space for fixed controls */
+        background: var(--bg-1);
+      }
+
+      body.is-mobile.half-screen .right .panel {
+        display: block !important;
+        margin: 12px;
+      }
+
+      .modal-holidays {
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 16px;
+        text-align: left;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .modal-holidays h4 {
+        margin: 0 0 10px 0;
+        font-size: 14px;
+        color: #94a3b8;
+      }
+
+      .modal-holiday-item {
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        font-size: 13px;
+        color: #cbd5e1;
+      }
+
+      .modal-holiday-item:last-child {
+        border-bottom: none;
+      }
+
+      .calendar-icon-dynamic {
+        width: 64px;
+        height: 64px;
+        background: #f1f5f9;
+        border-radius: 12px;
+        overflow: hidden;
+        margin: 0 auto 12px auto;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .cal-top {
+        background: linear-gradient(135deg, #ef4444, #b91c1c);
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 5px 0;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .cal-body {
+        color: #1e293b;
+        font-size: 26px;
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 40px;
+        background: #fff;
+      }
+    </style>
+
+    <div id="notify3d" class="hidden"></div>
+
+    <!-- Fullscreen Toggle Button -->
+    <button id="fullscreenToggle" class="fullscreen-toggle" title="Toggle Fullscreen">
+      <span id="fullscreenIcon">⛶</span>
+    </button>
+
+    <!-- Daily Logs Modal HTML -->
+    <div id="dailyLogsModal" class="modal-overlay">
+      <div class="modal-content">
+        <div class="modal-title">Daily Check-ins</div>
+
+        <!-- Holidays Section -->
+        <div id="modalHolidays" class="modal-holidays" style="display:none;">
+          <h4>📅 Upcoming Holidays</h4>
+          <div id="modalHolidaysList"></div>
+        </div>
+
+        <!-- Logs Section -->
+        <div id="modalLogsList" class="modal-logs"></div>
+
+        <button id="modalOkBtn" class="modal-btn">OK</button>
+      </div>
+    </div>
+
+
+    <!-- Mobile Wrapper -->
+    <div id="mobile-app"
+      style="display:flex; position:fixed; inset:0; background:#020617; color:white; font-family:Inter, sans-serif; text-align:center; padding:24px; z-index:9000; overflow-y:auto; flex-direction:column;">
+
+      <!-- Camera Background Layer -->
+      <div id="mobile-camera-layer" style="position:fixed; inset:0; z-index:0; display:none;">
+        <video id="camera-mobile" autoplay playsinline muted
+          style="width:100%; height:100%; object-fit:cover; transform: scaleX(-1);"></video>
+        <!-- Gradient overlay for text readability -->
+        <div
+          style="position:absolute; inset:0; background:linear-gradient(to top, rgba(2,6,23, 1), rgba(2,6,23, 0.4) 30%, rgba(2,6,23, 0.4) 60%, rgba(2,6,23, 0.8));">
+        </div>
+
+        <!-- Face Scanner Overlay (Main Screen) -->
+        <div id="mobile-scanner-overlay"
+          style="position:absolute; inset:0; pointer-events:none; display:flex; align-items:center; justify-content:center;">
+          <div
+            style="width:280px; height:280px; border:2px dashed rgba(255,255,255,0.3); border-radius:24px; position:relative;">
+            <div
+              style="position:absolute; top:-2px; left:-2px; width:24px; height:24px; border-top:4px solid #10b981; border-left:4px solid #10b981; border-radius:6px 0 0 0;">
+            </div>
+            <div
+              style="position:absolute; top:-2px; right:-2px; width:24px; height:24px; border-top:4px solid #10b981; border-right:4px solid #10b981; border-radius:0 6px 0 0;">
+            </div>
+            <div
+              style="position:absolute; bottom:-2px; left:-2px; width:24px; height:24px; border-bottom:4px solid #10b981; border-left:4px solid #10b981; border-radius:0 0 0 6px;">
+            </div>
+            <div
+              style="position:absolute; bottom:-2px; right:-2px; width:24px; height:24px; border-bottom:4px solid #10b981; border-right:4px solid #10b981; border-radius:0 0 6px 0;">
+            </div>
+            <!-- Scanning Beam -->
+            <div
+              style="position:absolute; top:0; left:0; width:100%; height:2px; background:#10b981; box-shadow:0 0 15px #10b981; animation:scanBeamMain 2s ease-in-out infinite;">
+            </div>
+          </div>
+          <style>
+            @keyframes scanBeamMain {
+
+              0%,
+              100% {
+                top: 0;
+                opacity: 0;
+              }
+
+              10%,
+              90% {
+                opacity: 1;
+              }
+
+              50% {
+                top: 100%;
+              }
+            }
+          </style>
+        </div>
+      </div>
+
+      <!-- Content Layer -->
+      <div id="mobile-content-layer"
+        style="position:relative; z-index:1; display:flex; flex-direction:column; height:100%;">
+
+        <!-- Top Section: Date & Time -->
+        <div style="margin-top:60px; margin-bottom:auto;">
+          <div id="m-date"
+            style="color:#94a3b8; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:1.5px; opacity:0.8;">
+            --</div>
+          <div id="m-time"
+            style="font-size:64px; font-weight:400; letter-spacing:-2px; margin-top:-4px; font-variant-numeric: tabular-nums;">
+            --:--</div>
+        </div>
+
+        <!-- "Tap to wake" Screen -->
+        <div id="tap-to-wake-view" onclick="wakeKiosk()"
+          style="margin-bottom:auto; opacity:0.5; display:flex; flex-direction:column; align-items:center; cursor:pointer; flex:1; justify-content:center;">
+          <div
+            style="width:80px; height:80px; border:1px solid rgba(255,255,255,0.2); background:rgba(255,255,255,0.05); border-radius:30px; display:flex; align-items:center; justify-content:center; margin-bottom:16px; animation: pulse 2s infinite;">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z">
+              </path>
+              <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+          </div>
+          <div style="font-size:16px; letter-spacing:0.5px; font-weight:500;">Tap to start camera</div>
+          <style>
+            @keyframes pulse {
+              0% {
+                transform: scale(1);
+                opacity: 0.8;
+              }
+
+              50% {
+                transform: scale(1.05);
+                opacity: 1;
+              }
+
+              100% {
+                transform: scale(1);
+                opacity: 0.8;
+              }
+            }
+          </style>
+        </div>
+
+        <!-- Bottom Buttons Grid -->
+        <div style="width:100%; display:flex; flex-direction:column; gap:16px;">
+
+          <!-- Row 1: Check In / Check Out -->
+          <div style="display:flex; gap:12px;">
+            <button id="btn-m-checkin" onclick="startMobileAuth('IN')"
+              style="flex:1; height:48px; border-radius:24px; border:none; background:#10b981; color:#022c22; font-weight:700; font-size:15px; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 4px 12px rgba(16,185,129,0.25);">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+                <polyline points="10 17 15 12 10 7"></polyline>
+                <line x1="15" y1="12" x2="3" y2="12"></line>
+              </svg>
+              Check In
+            </button>
+
+            <button id="btn-m-checkout" onclick="startMobileAuth('OUT')"
+              style="flex:1; height:48px; border-radius:24px; border:1px solid rgba(255,255,255,0.1); background:rgba(30,41,59,0.6); color:#cbd5e1; font-weight:600; font-size:15px; display:flex; align-items:center; justify-content:center; gap:8px; backdrop-filter:blur(4px);">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                <polyline points="16 17 21 12 16 7"></polyline>
+                <line x1="21" y1="12" x2="9" y2="12"></line>
+              </svg>
+              Check Out
+            </button>
+          </div>
+
+          <!-- Row 2: Attendance / Holidays -->
+          <div
+            style="display:flex; border:1px solid rgba(255,255,255,0.1); border-radius:20px; background:rgba(15,23,42,0.6); overflow:hidden; height:60px;">
+            <button id="btn-m-attendance"
+              style="flex:1; background:transparent; border:none; border-right:1px solid rgba(255,255,255,0.1); color:#cbd5e1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; font-size:11px; font-weight:500;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+              My Attendance
+            </button>
+
+            <button id="btn-m-holidays"
+              style="flex:1; background:transparent; border:none; color:#cbd5e1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; font-size:11px; font-weight:500;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+              Holidays
+            </button>
+          </div>
+        </div>
+      </div> <!-- End mobile-content-layer -->
+
+      <!-- Mobile Modals -->
+      <!-- CAMERA MODAL (Lovable Scanner Style) -->
+      <!-- Transparent background to see the video layer behind -->
+      <div id="m-camera-modal"
+        style="position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(2px); z-index:9100; display:none; flex-direction:column;">
+
+        <!-- Use absolute close button on top right of camera view -->
+        <button id="btn-m-close-camera"
+          style="position:absolute; top:24px; right:24px; z-index:9200; background:rgba(0,0,0,0.4); backdrop-filter:blur(4px); border:1px solid rgba(255,255,255,0.1); color:white; font-size:18px; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer;">✕</button>
+
+        <div style="flex:1; position:relative; overflow:hidden;">
+          <!-- Video Removed from here, moved to background layer -->
+
+          <!-- Scanner Overlay -->
+          <div style="position:absolute; inset:0; background:rgba(0,0,0,0.3); pointer-events:none;"></div>
+
+          <!-- Scanning Frame -->
+          <div
+            style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); width:280px; height:280px; pointer-events:none;">
+            <!-- Top Left Corner -->
+            <div
+              style="position:absolute; top:0; left:0; width:40px; height:40px; border-top:4px solid #14b8a6; border-left:4px solid #14b8a6; border-radius:12px 0 0 0;">
+            </div>
+            <!-- Top Right Corner -->
+            <div
+              style="position:absolute; top:0; right:0; width:40px; height:40px; border-top:4px solid #14b8a6; border-right:4px solid #14b8a6; border-radius:0 12px 0 0;">
+            </div>
+            <!-- Bottom Left Corner -->
+            <div
+              style="position:absolute; bottom:0; left:0; width:40px; height:40px; border-bottom:4px solid #14b8a6; border-left:4px solid #14b8a6; border-radius:0 0 0 12px;">
+            </div>
+            <!-- Bottom Right Corner -->
+            <div
+              style="position:absolute; bottom:0; right:0; width:40px; height:40px; border-bottom:4px solid #14b8a6; border-right:4px solid #14b8a6; border-radius:0 0 12px 0;">
+            </div>
+
+            <!-- Scanning Beam Animation -->
+            <div
+              style="position:absolute; top:0; left:0; width:100%; height:2px; background:#14b8a6; box-shadow:0 0 20px #2dd4bf; animation:scanBeam 2.5s ease-in-out infinite;">
+            </div>
+
+            <!-- Center Person Icon (Optional, low opacity) -->
+            <div
+              style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; opacity:0.15;">
+              <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+            </div>
+          </div>
+
+          <div id="scan-status-text"
+            style="position:absolute; bottom:120px; left:0; right:0; text-align:center; color:white; font-size:18px; font-weight:500; letter-spacing:0.5px; opacity:0.9; text-shadow:0 2px 8px rgba(0,0,0,0.5);">
+            Scanning Face...
+          </div>
+
+          <style>
+            @keyframes scanBeam {
+              0% {
+                top: 0;
+                opacity: 0;
+              }
+
+              15% {
+                opacity: 1;
+              }
+
+              85% {
+                opacity: 1;
+              }
+
+              100% {
+                top: 100%;
+                opacity: 0;
+              }
+            }
+          </style>
+        </div>
+      </div>
+
+      <!-- SUCCESS MODAL (Lovable Style) -->
+      <div id="m-success-modal"
+        style="position:fixed; inset:0; background:rgba(0,0,0,0.85); backdrop-filter:blur(8px); z-index:9500; display:none; align-items:center; justify-content:center;">
+        <div
+          style="position:relative; background:#0f172a; border:1px solid #1e293b; padding:48px 32px; border-radius:32px; text-align:center; width:85%; max-width:320px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.5);">
+
+          <button id="btn-m-success-close"
+            style="position:absolute; top:20px; right:20px; background:rgba(255,255,255,0.05); border:none; color:#64748b; width:32px; height:32px; border-radius:50%; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s;">✕</button>
+
+          <!-- Dynamic Icon Container -->
+          <div id="m-success-icon-bg"
+            style="width:88px; height:88px; background:rgba(16,185,129,0.1); border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 24px;">
+            <svg id="m-success-icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#10b981"
+              stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </div>
+
+          <h3 id="m-success-title"
+            style="color:white; margin:0; font-size:24px; font-weight:700; letter-spacing:-0.5px;">Checked
+            In!
+          </h3>
+
+          <p id="m-success-msg" style="color:#94a3b8; font-size:15px; margin:12px 0 0 0; line-height:1.5;">
+            Your attendance has been recorded.</p>
+
+          <div id="m-success-time-lg"
+            style="color:white; font-size:48px; font-weight:300; margin:28px 0; letter-spacing:-2px; font-variant-numeric: tabular-nums;">
+            --:--</div>
+
+          <button id="btn-m-success-done"
+            style="width:100%; padding:16px; background:#10b981; border-radius:16px; border:none; color:#022c22; font-weight:600; font-size:16px; cursor:pointer; transition:transform 0.1s;">Done</button>
+        </div>
+      </div>
+
+      <!-- ATTENDANCE / LIST MODAL (Partial Sheet Style) -->
+      <div id="m-list-modal"
+        style="position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(2px); z-index:9200; display:none; flex-direction:column; justify-content:flex-end;">
+        <!-- Close Area -->
+        <div id="btn-m-close-list-area" style="flex:1;"></div>
+
+        <div
+          style="background:#0f172a; border-top:1px solid #334155; border-radius:24px 24px 0 0; padding:24px; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 -10px 40px rgba(0,0,0,0.5);">
+          <div style="width:40px; height:4px; background:#334155; border-radius:2px; margin:0 auto 20px auto;">
+          </div>
+
+          <div style="text-align:left; margin-bottom:24px;">
+            <h3 id="m-list-title" style="margin:0; font-size:20px; font-weight:700; color:white;">Attendance
+            </h3>
+            <p id="m-list-subtitle" style="margin:4px 0 0 0; font-size:14px; color:#64748b;">Your records
+            </p>
+          </div>
+
+          <div id="m-list-content" style="flex:1; overflow-y:auto; padding-bottom:20px;">
+            <!-- Content injected via JS -->
+          </div>
+
+          <button id="btn-m-list-done" style="
+                        background: linear-gradient(135deg, #10b981, #059669);
+                        color: white;
+                        border: none;
+                        padding: 16px;
+                        border-radius: 12px;
+                        font-weight: 600;
+                        font-size: 16px;
+                        margin-top: 16px;
+                        cursor: pointer;
+                        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+                    ">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="desktop-app" class="page" style="display: none;">
+    <div class="viewport">
+      <div class="outer">
+        <div class="card" id="kioskCard" role="main" aria-label="Aurora Motion Kiosk">
+
+          <div class="header">
+            <div>
+              <div class="title">Aurora Motion Kiosk</div>
+              <div class="subtitle">Animated waves · Face detection · Live customizer</div>
+            </div>
+            <div style="min-width:44px; text-align:right;">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+                <defs>
+                  <linearGradient id="g1" x1="0" x2="1">
+                    <stop offset="0" stop-color="#7c3aed" />
+                    <stop offset="1" stop-color="#06b6d4" />
+                  </linearGradient>
+                </defs>
+                <circle cx="12" cy="12" r="10" fill="url(#g1)" opacity="0.16" />
+              </svg>
+            </div>
+          </div>
+
+          <div class="layout">
+            <!-- LEFT: Camera + Controls -->
+            <div class="left">
+              <div class="field mobile-hide">
+                <label class="label">Employee ID</label>
+                <input id="employee_id" class="input" type="text" value="" autocomplete="off" readonly />
+              </div>
+              <div class="camera" aria-live="polite">
+                <div class="camera-inner">
+
+                  <div id="face-guide"></div>
+
+                  <div id="cameraBg" class="camera-bg">
+                  </div>
+
+                  <video id="camera" autoplay playsinline muted></video>
+
+                  <div id="camera-hint">🎥 Align your face inside the box</div>
+
+                  <div class="ribbon"></div>
+                  <div class="glow"></div>
+                  <canvas id="bboxCanvas"></canvas>
+
+                </div>
+
+                <div id="inoutBadge" class="badge hidden">IN</div>
+
+                <div style="
+                position:absolute;
+                right:12px;
+                bottom:12px;
+                font-size:13px;
+                color:rgba(255,255,255,0.9);
+                background: rgba(0,0,0,0.18);
+                padding:6px 8px;
+                border-radius:8px;">
+                  Aurora
+                </div>
+              </div>
+
+              <canvas id="capture_canvas" width="960" height="720" style="display:none;"></canvas>
+
+              <div class="controls">
+                <button id="inout_btn" class="in-btn">✅ IN</button>
+                <button id="capture_btn" class="capture-btn" style="display:none;">📸 Capture &
+                  Mark</button>
+                <button id="preview_toggle" class="small-btn" style="display:none;">Preview</button>
+              </div>
+
+              <img id="imgPreview" class="img-preview hidden"
+                style="display:none; max-width:100%; margin-top:10px; border-radius:8px;" />
+
+              <div id="resultBox" class="result hidden">
+                <div id="resultLeft"></div>
+                <div id="resultRight"></div>
+              </div>
+
+              <div id="debug" class="debug hidden" style="margin-top:8px; font-size:12px;"></div>
+
+
+
+            </div>
+
+            <!-- RIGHT: Customizer + Status + Holidays -->
+            <div class="right">
+
+              <!-- Holidays Panel -->
+              <div class="panel holidays-panel">
+                <h4>Holidays</h4>
+                <div class="holiday-range" id="holidayRange"></div>
+                <div id="holidayBox">
+                  <p style="color: var(--muted); font-size: 14px;">Loading...</p>
+                </div>
+              </div>
+
+              <!-- Theme Customizer -->
+              <div class="panel">
+                <h4>Theme Color Customizer</h4>
+                <div class="row">
+                  <label class="muted" style="min-width:80px;">Aurora A</label>
+                  <input id="colorA" type="color" value="#7c3aed">
+                  <input id="colorB" type="color" value="#06b6d4" style="margin-left:8px;">
+                </div>
+
+                <div class="row">
+                  <label class="muted" style="min-width:80px;">Button</label>
+                  <input id="btnA" type="color" value="#7c3aed">
+                  <input id="btnB" type="color" value="#06b6d4" style="margin-left:8px;">
+                </div>
+
+                <div class="row" style="margin-top:10px;">
+                  <button id="resetTheme" class="small-btn">Reset Theme</button>
+                  <div style="flex:1"></div>
+                  <div id="themeSaved" class="muted" style="font-size:13px; display:none;">Saved
+                  </div>
+                </div>
+              </div>
+
+              <!-- Features -->
+              <div class="panel">
+                <h4>Features</h4>
+                <div class="row">
+                  <label class="muted" style="min-width:110px;">Sound</label>
+                  <input id="feature_sound" type="checkbox" checked>
+                </div>
+                <div class="row">
+                  <label class="muted" style="min-width:110px;">Vibration</label>
+                  <input id="feature_vibrate" type="checkbox" checked>
+                </div>
+                <div class="row">
+                  <label class="muted" style="min-width:110px;">Show Face %</label>
+                  <input id="feature_facepct" type="checkbox" checked>
+                </div>
+                <div class="row">
+                  <label class="muted" style="min-width:110px;">Auto Capture</label>
+                  <input id="feature_autocapture" type="checkbox" checked>
+                </div>
+                <div class="row">
+                  <label class="muted" style="min-width:110px;">Colour Mode</label>
+                  <input id="feature_colormode" type="checkbox">
+                </div>
+              </div>
+
+              <!-- Face Detection Status -->
+              <div class="panel">
+                <h4>Face Detection</h4>
+                <div class="model-status" id="modelStatus">Loading models…</div>
+                <div style="margin-top:8px;" class="muted">Note: models load from CDN. You can host
+                  locally for
+                  offline.
+                </div>
+              </div>
+
+            </div>
+          </div> <!-- layout -->
+
+        </div>
+      </div>
+    </div>
+  </div>
+  </div> <!-- End desktop-app -->
+
+  <!-- face-api -->
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js" defer></script>
+  <script>
+    window.frappe = window.frappe || {};
+    frappe.csrf_token = "{{ csrf_token }}";
+  </script>
+
+  <script>
+    window.addEventListener('load', async function () {
+      console.log("DEBUG: Kiosk Script Starting...");
+      const debugBanner = document.getElementById('debug-banner');
+      if (debugBanner) debugBanner.innerText += " JS Started...";
+      /* ---------- Elements ---------- */
+      document.body.classList.add('is-mobile');
+      const isMobileMode = true; // document.body.classList.contains('is-mobile');
+      const kioskCard = document.getElementById('kioskCard');
+      // Dynamic camera selection
+      const camera = isMobileMode ? document.getElementById('camera-mobile') : document.getElementById('camera');
+
+      // Toggle Views
+      if (isMobileMode) {
+        document.getElementById('desktop-app').style.display = 'none';
+        document.getElementById('mobile-app').style.display = 'flex';
+        startMobileClock();
+        initMobileEvents();
+      }
+
+      function startMobileClock() {
+        function update() {
+          const now = new Date();
+          // Time 02:52 PM
+          const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+          // Date Friday, February 13
+          const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+          document.getElementById('m-time').innerText = timeStr;
+          document.getElementById('m-date').innerText = dateStr;
+        }
+        update();
+        setInterval(update, 1000);
+      }
+
+      /* ---------- IDLE TIMER LOGIC ---------- */
+      let kioskIdleTime = 0;
+      let kioskActive = false;
+      let idleInterval = null;
+
+      // Reset idle time on any interaction
+      document.onclick = function () { kioskIdleTime = 0; };
+      document.onmousemove = function () { kioskIdleTime = 0; };
+      document.ontouchstart = function () { kioskIdleTime = 0; };
+
+      function startIdleTimer() {
+        if (idleInterval) clearInterval(idleInterval);
+        kioskIdleTime = 0;
+        idleInterval = setInterval(() => {
+          kioskIdleTime++;
+          // 60 seconds = 1 minute idle
+          if (kioskActive && kioskIdleTime >= 60) {
+            sleepKiosk();
+          }
+        }, 1000);
+      }
+
+      // Expose globally
+      window.wakeKiosk = async function () {
+        if (kioskActive) return; // Already active
+        console.log("[KIOSK] Waking up...");
+        kioskActive = true;
+        kioskIdleTime = 0;
+
+        // UI Changes
+        document.getElementById('mobile-camera-layer').style.display = 'block';
+        document.getElementById('tap-to-wake-view').style.display = 'none';
+
+        // Dim the background to make camera visible
+        document.getElementById('mobile-app').style.background = 'transparent';
+
+        // Start Camera
+        const camera = document.getElementById('camera-mobile');
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } });
+          camera.srcObject = stream;
+          await camera.play();
+        } catch (e) {
+          console.error("Camera wake error", e);
+          alert("Camera failed to start.");
+        }
+
+        startIdleTimer();
+      };
+
+      window.sleepKiosk = function () {
+        console.log("[KIOSK] Sleeping...");
+        kioskActive = false;
+        if (idleInterval) clearInterval(idleInterval);
+
+        // UI Changes
+        document.getElementById('mobile-camera-layer').style.display = 'none';
+        document.getElementById('tap-to-wake-view').style.display = 'flex';
+        document.getElementById('mobile-app').style.background = '#020617';
+
+        // Stop Camera
+        const camera = document.getElementById('camera-mobile');
+        if (camera.srcObject) {
+          camera.srcObject.getTracks().forEach(track => track.stop());
+          camera.srcObject = null;
+        }
+
+        // Also close any open modals
+        document.getElementById('m-camera-modal').style.display = 'none';
+        document.getElementById('m-success-modal').style.display = 'none';
+        document.getElementById('m-list-modal').style.display = 'none';
+        document.getElementById('dailyLogsModal').classList.remove('active');
+      };
+
+      // Call sleep initially to set state
+      // Call sleep initially to set state
+      setTimeout(sleepKiosk, 500); // Ensure starts in sleep mode
+
+      function initMobileEvents() {
+        // Check In
+        document.getElementById('btn-m-checkin').onclick = () => startMobileAuth('IN');
+        // Check Out
+        document.getElementById('btn-m-checkout').onclick = () => startMobileAuth('OUT');
+
+        // Attendance History
+        document.getElementById('btn-m-attendance').onclick = async () => {
+          await startMobileAuth('AUTH_ONLY', async (employeeId) => {
+            showMobileListModal('My Attendance', 'Loading...');
+            // Bind Done button to reload
+            try {
+              document.getElementById('btn-m-list-done').onclick = () => {
+                window.location.reload();
+              };
+            } catch (e) { }
+            const data = await callURL("smart_attendance.api.get_recent_attendance", { employee: employeeId });
+            renderMobileAttendance(data.message || []);
+          });
+        };
+
+        // Holidays
+        document.getElementById('btn-m-holidays').onclick = async () => {
+          await startMobileAuth('AUTH_ONLY', async (employeeId) => {
+            showMobileListModal('Upcoming Holidays', 'Loading...');
+            // Bind Done button to reload
+            try {
+              document.getElementById('btn-m-list-done').onclick = () => {
+                window.location.reload();
+              };
+            } catch (e) { }
+            const data = await callURL("smart_attendance.api.get_employee_holidays", { employee: employeeId });
+            renderMobileHolidays(data.message || []);
+          });
+        };
+
+        // Close Success
+        document.getElementById('btn-m-success-done').onclick = () => {
+          document.getElementById('m-success-modal').style.display = 'none';
+          // Force clean state
+          stableSince = null;
+          blinkCount = 0;
+          detecting = true;
+          // Reset hint
+          const hint = document.getElementById("camera-hint");
+          if (hint) {
+            hint.innerText = "Align your face inside the box";
+            hint.style.color = "white";
+            hint.style.border = "1px solid rgba(255,255,255,0.3)";
+          }
+          // Hard reload as requested
+          window.location.reload();
+        };
+        document.getElementById('btn-m-success-close').onclick = () => {
+          document.getElementById('m-success-modal').style.display = 'none';
+        };
+
+        // Close List
+        document.getElementById('m-list-modal').onclick = (e) => {
+          if (e.target.id === 'm-list-modal' || e.target.id === 'btn-m-close-list-area') {
+            document.getElementById('m-list-modal').style.display = 'none';
+          }
+        };
+      }
+
+      let mobileCallback = null;
+      let mobileAction = null;
+
+      async function startMobileAuth(action, callback) {
+        // If Sleeping, Wake First
+        if (!kioskActive) {
+          await wakeKiosk();
+          // Just return, user sees camera now. But actually user expects action.
+          // Wait for camera ready?
+          // Let's proceed, as wakeKiosk starts camera.
+        }
+
+        mobileAction = action; // 'IN', 'OUT', 'AUTH_ONLY'
+        mobileCallback = callback;
+
+        // Instead of opening modal, we just ensure detection is ON
+        detecting = true;
+        stableSince = null; // Reset stability to force fresh detection
+
+        // Make sure we are using the right camera element reference in detection loop
+        // (Already handled by global 'camera' var pointing to 'camera-mobile' in mobile mode)
+
+        show3DNotify('in', 'Align Face...');
+      }
+
+      // Mobile Render Helpers
+      function showMobileListModal(title, content) {
+        document.getElementById('m-list-title').innerText = title;
+        document.getElementById('m-list-content').innerHTML = typeof content === 'string' ? `<p style="color:#94a3b8">${content}</p>` : '';
+        document.getElementById('m-list-modal').style.display = 'flex';
+      }
+      function renderMobileAttendance(list) {
+        let todayRecord = null;
+        const history = [];
+
+        // Get current date in YYYY-MM-DD format (local time)
+        // Note: We need careful handling as toISOString is UTC.
+        // We can use a trick:
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const todayStr = `${year}-${month}-${day}`;
+
+        list.forEach(item => {
+          // raw_date from server is YYYY-MM-DD string usually
+          if (item.raw_date === todayStr) {
+            todayRecord = item;
+          } else {
+            history.push(item);
+          }
+        });
+
+        let html = '';
+
+        // TODAY SECTION
+        html += `<div style="font-size:12px; color:#64748b; margin-bottom:12px; font-weight:600; letter-spacing:1px;">TODAY</div>`;
+
+        if (todayRecord) {
+          let inTime = todayRecord.in_time === '--:--' ? '--:--' : todayRecord.in_time;
+          let outTime = todayRecord.out_time === '--:--' ? '--:--' : todayRecord.out_time;
+
+          // If times are missing but status is Present, show Status
+          if (inTime === '--:--' && todayRecord.status === 'Present') inTime = 'Present';
+
+          html += `
+                            <div style="display:flex; gap:12px; margin-bottom:24px;">
+                                <!-- Check In Card -->
+                                <div style="flex:1; background:#1e293b; padding:16px; border-radius:20px; display:flex; flex-direction:column; justify-content:center; border:1px solid #334155;">
+                                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                                        <div style="width:24px; height:24px; border-radius:50%; background:#065f46; display:flex; align-items:center; justify-content:center;">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                        </div>
+                                        <span style="font-size:12px; color:#94a3b8;">Check In</span>
+                                    </div>
+                                    <div style="font-size:20px; font-weight:700; color:white;">${inTime}</div>
+                                </div>
+                                
+                                <!-- Check Out Card -->
+                                <div style="flex:1; background:#1e293b; padding:16px; border-radius:20px; display:flex; flex-direction:column; justify-content:center; border:1px solid #334155;">
+                                     <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                                        <div style="width:24px; height:24px; border-radius:50%; background:#451a03; display:flex; align-items:center; justify-content:center;">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fb923c" stroke-width="3"><polyline points="7 17 17 7"></polyline><polyline points="7 7 17 7 17 17"></polyline></svg>
+                                        </div>
+                                        <span style="font-size:12px; color:#94a3b8;">Check Out</span>
+                                    </div>
+                                    <div style="font-size:20px; font-weight:700; color:white;">${outTime}</div>
+                                </div>
+                            </div>
+                         `;
+        } else {
+          html += `<div style="color:#64748b; font-size:14px; margin-bottom:24px; font-style:italic;">No punch records for today.</div>`;
+        }
+
+        // THIS WEEK SECTION
+        html += `<div style="font-size:12px; color:#64748b; margin-bottom:12px; font-weight:600; letter-spacing:1px;">HISTORY</div>`;
+
+        if (history.length > 0) {
+          history.forEach(item => {
+            let statusDisplay = '';
+            if (item.working_hours) {
+              statusDisplay = `
+                                <div style="color:#94a3b8; font-size:13px; display:flex; align-items:center; gap:6px;">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                                    ${item.working_hours}
+                                </div>
+                             `;
+            } else {
+              // Fallback to showing Status (Present, Absent, etc)
+              const color = item.status === 'Present' ? '#34d399' : (item.status === 'Absent' ? '#ef4444' : '#cbd5e1');
+              statusDisplay = `<div style="font-weight:600; font-size:13px; color:${color};">${item.status || 'None'}</div>`;
+            }
+
+            html += `
+                                <div style="margin-bottom:20px; display:flex; justify-content:space-between; align-items:center;">
+                                    <div>
+                                        <div style="font-weight:600; color:white; font-size:15px; margin-bottom:2px;">${item.day}</div>
+                                        <div style="color:#64748b; font-size:12px;">${item.date}</div>
+                                    </div>
+                                    ${statusDisplay}
+                                </div>
+                             `;
+          });
+        } else {
+          html += `<div style="color:#64748b; font-size:14px; font-style:italic;">No history available.</div>`;
+        }
+
+        document.getElementById('m-list-content').innerHTML = html;
+      }
+
+      function renderMobileHolidays(list) {
+        // Sort by date? List is usually sorted.
+        // Render as cards
+        if (!list || list.length === 0) {
+          document.getElementById('m-list-content').innerHTML = '<div style="color:#94a3b8; text-align:center; margin-top:40px;">No upcoming holidays.</div>';
+          return;
+        }
+
+        const html = list.map(item => `
+                        <div style="background:#1e293b; padding:16px; border-radius:16px; margin-bottom:12px; border:1px solid #334155; display:flex; align-items:center; gap:16px;">
+                            <div style="background:#334155; width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:20px;">
+                                🎁
+                            </div>
+                            <div style="flex:1;">
+                                <div style="color:white; font-weight:600; font-size:15px; margin-bottom:2px;">${item.description}</div>
+                                <div style="color:#94a3b8; font-size:13px;">${item.date}</div>
+                            </div>
+                            <div style="background:#0f766e; color:#2dd4bf; px:3; py:1; font-size:11px; padding:4px 8px; border-radius:6px; font-weight:700;">
+                                Upcoming
+                            </div>
+                        </div>
+                     `).join('');
+        document.getElementById('m-list-content').innerHTML = html;
+      }
+
+      function getLocalSQLTime() {
+        // Return Local Wall Clock Time (YYYY-MM-DD HH:MM:SS)
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      }
+
+      // Update Success Modal styling dynamically based on action
+      async function handleAutoCapture(face) {
+        // ... (previous logic existing)
+        if (!detecting) return;
+        if (!isMobileMode) {
+          processDesktopFace(face);
+          return;
+        }
+
+        detecting = false;
+        const canvas = document.createElement('canvas');
+        canvas.width = camera.videoWidth;
+        canvas.height = camera.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(camera, 0, 0);
+        const imageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+
+        // User requested avoiding 'AUTH' log type. We use 'IN' (or action) but safely skip creation via flag.
+        const logType = (mobileAction === 'AUTH_ONLY') ? 'IN' : mobileAction;
+        const isVerifyOnly = (mobileAction === 'AUTH_ONLY');
+
+        try {
+          // Force device_id to be string "null" if it is actually null/undefined to match backend check
+          const deviceIdPayload = (typeof deviceId !== 'undefined' && deviceId) ? deviceId : "null";
+
+          const res = await callPost('smart_attendance.kiosk.verify_face', {
+            image_base64: imageBase64,
+            log_type: logType,
+            verify_only: isVerifyOnly,
+            device_id: deviceIdPayload,
+            timestamp: getLocalSQLTime()
+          });
+
+          if (!res.ok) {
+            // User disliked alert() - use toast instead
+            show3DNotify('error', res.message || "Face not recognized");
+
+            // Update status text temporarily
+            const statusEl = document.getElementById('scan-status-text');
+            if (statusEl) {
+              const originalText = statusEl.innerText;
+              statusEl.innerText = "❌ Not Recognized";
+              statusEl.style.color = "#ef4444";
+              setTimeout(() => {
+                statusEl.innerText = originalText;
+                statusEl.style.color = "white";
+              }, 1500);
+            }
+
+            detecting = true;
+            return;
+          }
+
+          const employeeId = res.message.employee;
+
+          if (res.message && res.message.ok === false) {
+            console.warn("Backend Logic Error:", res.message.message);
+            show3DNotify('error', res.message.message);
+            detecting = true;
+            return;
+          }
+
+          if (!res.message || !res.message.name) {
+            console.error("Critical: Backend returned OK but no Checkin Name", res);
+            show3DNotify('error', "System Error: Attendance not saved.");
+            detecting = true;
+            return;
+          }
+
+          const checkinId = res.message.name;
+
+          // Hide Scanner (if any overlay, currently background)
+          // No modal to hide for main flow
+
+          // 3. Handle Action
+          if (mobileAction === 'AUTH_ONLY') {
+            if (mobileCallback) mobileCallback(employeeId);
+          } else {
+            // Success Modal Update
+            const isCheckIn = (res.message.log_type === 'IN');
+            const color = isCheckIn ? '#10b981' : '#f59e0b';
+            const darkColor = isCheckIn ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)';
+            const title = isCheckIn ? 'Checked In!' : 'Checked Out!';
+            const empName = res.message.employee_name || res.message.employee || "Employee";
+            const msg = `${empName}, your check-${isCheckIn ? 'in' : 'out'} has been recorded. [Ref: ${checkinId}]`;
+            const subMsg = `Ref: ${checkinId}`;
+
+            document.getElementById('m-success-icon-bg').style.background = darkColor;
+            const icon = document.getElementById('m-success-icon');
+            icon.setAttribute('stroke', color);
+
+            if (isCheckIn) {
+              // Arrow Down Left
+              icon.innerHTML = '<line x1="17" y1="7" x2="7" y2="17"></line><polyline points="17 17 7 17 7 7"></polyline>';
+            } else {
+              // Arrow Top Right
+              icon.innerHTML = '<line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline>';
+            }
+
+            document.getElementById('m-success-title').innerText = title;
+            document.getElementById('m-success-msg').innerText = msg;
+
+            // Add ID display if element exists, or append to msg
+            // Checking if we have a specific element for ref? No.
+            // Let's append to msg for now or create a small div
+            const existingRef = document.getElementById('m-success-ref');
+            if (existingRef) {
+              existingRef.innerText = subMsg;
+            } else {
+              // Create it dynamically if needed or just append to time
+            }
+
+            document.getElementById('m-success-time-lg').innerText = new Date(res.message.time || new Date()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+            const btn = document.getElementById('btn-m-success-done');
+            btn.style.background = color;
+            btn.style.color = isCheckIn ? '#022c22' : '#451a03';
+
+            document.getElementById('m-success-modal').style.display = 'flex';
+          }
+
+        } catch (err) {
+          alert("Error: " + err.message);
+          detecting = true;
+        }
+      }
+
+      // Add Close Listener for Sheet
+      if (document.getElementById('btn-m-close-list-area')) {
+        document.getElementById('btn-m-close-list-area').onclick = () => {
+          document.getElementById('m-list-modal').style.display = 'none';
+        };
+      }
+
+      async function processDesktopFace(face) {
+        // The original logic was: capture -> populate 'employee_id' field -> or auto-submit
+        // Since I overwrote the code, I need to make sure I didn't delete the logic.
+        // I am inside 'handleAutoCapture'.
+        // For desktop, I'll just trigger the existing flow.
+        // But I need access to the original 'captureImageAndSubmit'.
+        // It doesn't seem to exist in global scope yet.
+        // I will assume the original logic was to call 'verify'
+        // We can implement a simple desktop fallback.
+
+        // Desktop Fallback:
+        detecting = false;
+        // Capture
+        const canvas = document.getElementById('capture_canvas'); // Use existing canvas
+        const ctx = canvas.getContext('2d');
+        canvas.width = camera.videoWidth;
+        canvas.height = camera.videoHeight;
+        ctx.drawImage(camera, 0, 0);
+        const imageBase64 = canvas.toDataURL('image/jpeg', 0.85);
+
+        show3DNotify('in', 'Verifying...');
+        const res = await callPost('smart_attendance.kiosk.verify_face', {
+          image_base64: imageBase64,
+          log_type: 'AUTO',
+          device_id: null,
+          timestamp: getLocalSQLTime()
+        });
+
+        if (res.ok) {
+          show3DNotify('in', `Welcome ${res.employee_name}`);
+          // Show logs
+          fetchAndShowDailyLogs(res.employee);
+        } else {
+          show3DNotify('error', res.message || 'Face not matched');
+          setTimeout(() => detecting = true, 2000);
+        }
+      }
+
+      const bboxCanvas = document.getElementById('bboxCanvas');
+      const bboxCtx = bboxCanvas.getContext('2d');
+      const canvas = document.getElementById('capture_canvas');
+      const ctx = canvas.getContext('2d');
+      const empInput = document.getElementById('employee_id');
+      const captureBtn = document.getElementById('capture_btn');
+      const previewBtn = document.getElementById('preview_toggle');
+      const imgPreview = document.getElementById('imgPreview');
+      const resultBox = document.getElementById('resultBox');
+      const resultLeft = document.getElementById('resultLeft');
+      const resultRight = document.getElementById('resultRight');
+      const debug = document.getElementById('debug');
+      const inoutBadge = document.getElementById('inoutBadge');
+      const cameraBg = document.getElementById('cameraBg');
+      const historyRows = document.getElementById('historyRows');
+
+      const feature_sound = document.getElementById('feature_sound');
+      const feature_vibrate = document.getElementById('feature_vibrate');
+      const feature_facepct = document.getElementById('feature_facepct');
+      const feature_autocapture = document.getElementById('feature_autocapture');
+      const feature_colormode = document.getElementById('feature_colormode');
+
+      const colorA = document.getElementById('colorA');
+      const colorB = document.getElementById('colorB');
+      const btnA = document.getElementById('btnA');
+      const btnB = document.getElementById('btnB');
+      const resetTheme = document.getElementById('resetTheme');
+      const themeSaved = document.getElementById('themeSaved');
+      const modelStatus = document.getElementById('modelStatus');
+
+      cameraBg.style.backgroundImage = "url('/files/0c261b40-99c5-4c9d-9a56-a9a8707f309e_image.png')";
+
+      /* ---------- CSRF HELPER ---------- */
+      /* ---------- CSRF HELPER ---------- */
+      async function fetchKioskCSRF() {
+        try {
+          const res = await fetch('/api/method/smart_attendance.smart_attendance.api.get_csrf_token');
+          if (res.ok) {
+            const d = await res.json();
+            if (d.message && d.message.csrf_token) {
+              frappe.csrf_token = d.message.csrf_token;
+              console.log("Updated CSRF Token from server:", frappe.csrf_token);
+              return true;
+            }
+          } else if (res.status === 417 || res.status === 403) {
+            // Critical Session failure - Likely stale cookies
+            console.warn("Session invalid (417/403). Clearing cookies to recover.");
+            document.cookie.split(";").forEach(c => {
+              document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+            });
+            window.location.reload();
+            return false;
+          }
+        } catch (e) {
+          console.error("Failed to fetch fresh CSRF token", e);
+        }
+        return false;
+      }
+
+      // Init token on load only if missing or "None"
+      if (!frappe.csrf_token || frappe.csrf_token === "None") {
+        fetchKioskCSRF();
+      }
+
+      /* ---------- FETCH WRAPPER (REPLACES frappe.call) ---------- */
+      async function callURL(method, args = {}) {
+        const params = new URLSearchParams();
+        for (const [key, value] of Object.entries(args)) {
+          params.append(key, value);
+        }
+
+        try {
+          const res = await fetch(`/api/method/${method}?${params.toString()}`, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json'
+              // Removed CSRF for GET to avoid 417 errors on Guest
+            }
+          });
+
+          if (!res.ok) {
+            console.error(`API ${method} failed with status ${res.status}`);
+            if (res.status === 417 || res.status === 403) {
+              console.warn("API 417/403 - Clearing Cookies & Reloading");
+              document.cookie.split(";").forEach(c => {
+                document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+              });
+              window.location.reload();
+            }
+            return { message: null };
+          }
+
+          const data = await res.json();
+          return data;
+        } catch (e) {
+          console.error("API Call Error", e);
+          return { message: null };
+        }
+      }
+
+      // POST version for writes
+      async function callPost(method, args = {}, retry = true) {
+        // Use FormData to prevent 400 Bad Request on large payloads (e.g. base64 images)
+        const formData = new FormData();
+        if (args) {
+          for (const [key, value] of Object.entries(args)) {
+            if (value === null || value === undefined) {
+              formData.append(key, "");
+            } else {
+              formData.append(key, value);
+            }
+          }
+        }
+
+        try {
+          const token = frappe.csrf_token || '';
+
+          const res = await fetch(`/api/method/${method}`, {
+            method: 'POST',
+            headers: {
+              'X-Frappe-CSRF-Token': token,
+              'Accept': 'application/json'
+            },
+            body: formData
+          });
+
+          // Log full error body
+          if (!res.ok) {
+            console.error(`API ${method} failed with status ${res.status}`);
+            let errorMsg = "Request Failed";
+            try {
+              const errData = await res.json();
+              console.error("Error Detail:", errData); // Show valid server error if any
+              errorMsg = errData.message || errorMsg;
+
+              // Check for Frappe specific error trace
+              if (errData._server_messages) {
+                try {
+                  const msgs = JSON.parse(errData._server_messages);
+                  errorMsg = msgs.join("\n");
+                } catch (e) { }
+              }
+            } catch (e) {
+              const text = await res.text();
+              console.error("Error Text:", text);
+            }
+            return { ok: false, message: errorMsg, status: res.status };
+          }
+
+          const data = await res.json();
+
+          // Frappe API usually returns { message: ... } or data directly. 
+          // Let's normalize success.
+          if (!data) return { ok: true };
+          // Add 'ok: true' if missing but request was 200
+          if (data.ok === undefined) data.ok = true;
+
+          return data;
+        } catch (e) {
+          console.error("API Post Network Error", e);
+          return { ok: false, message: "Network Error: " + e.message };
+        }
+      }
+
+      // Test connectivity on load
+      (async () => {
+        try {
+          const pond = await callPost('smart_attendance.kiosk.ping');
+          console.log("Ping Check:", pond);
+        } catch (e) {
+          console.error("Ping Failed", e);
+        }
+      })();
+
+      /* ---------- Backend Settings ---------- */
+      const kioskFlags = {
+        sound: false,
+        vibration: false,
+        showFacePercentage: false,
+        colourMode: false
+      };
+
+      async function loadKioskSettings() {
+        try {
+          const data = await callURL("smart_attendance.smart_attendance.api.custom_page_handler.get_kiosk_settings");
+          if (!data.message) return;
+          const s = data.message.settings;
+
+          // Apply theme colors from backend
+          document.documentElement.style.setProperty("--aurora-a", s.theme.aurora_a);
+          document.documentElement.style.setProperty("--aurora-b", s.theme.aurora_b);
+          document.documentElement.style.setProperty("--button-a", s.theme.button_a);
+          document.documentElement.style.setProperty("--button-b", s.theme.button_b);
+
+          // Update color pickers
+          colorA.value = s.theme.aurora_a;
+          colorB.value = s.theme.aurora_b;
+          btnA.value = s.theme.button_a;
+          btnB.value = s.theme.button_b;
+
+          // Apply feature flags
+          kioskFlags.sound = !!s.features.sound;
+          kioskFlags.vibration = !!s.features.vibration;
+          kioskFlags.showFacePercentage = !!s.features.show_face_percentage;
+          kioskFlags.colourMode = !!s.advanced.colour_mode;
+
+          // Update UI toggles
+          feature_sound.checked = kioskFlags.sound;
+          feature_vibrate.checked = kioskFlags.vibration;
+          feature_facepct.checked = kioskFlags.showFacePercentage;
+          feature_colormode.checked = kioskFlags.colourMode;
+
+          // Apply color mode
+          document.body.classList.toggle("light-mode", kioskFlags.colourMode);
+
+          // Apply theme
+          applyTheme(colorA.value, colorB.value, btnA.value, btnB.value);
+        } catch (e) {
+          console.error("Failed to load kiosk settings:", e);
+        }
+      }
+
+
+
+      // /* ---------- Theme ---------- */
+      function applyTheme(cA, cB, bA, bB) {
+        document.documentElement.style.setProperty('--aurora-a', cA);
+        document.documentElement.style.setProperty('--aurora-b', cB);
+        document.documentElement.style.setProperty('--button-a', bA);
+        document.documentElement.style.setProperty('--button-b', bB);
+        document.documentElement.style.setProperty('--accent-gradient', `linear-gradient(90deg, ${bA}, ${bB})`);
+
+        // Update capture button background
+        document.querySelectorAll('.capture-btn').forEach(el => el.style.background = `linear-gradient(90deg, ${bA}, ${bB})`);
+
+        // Update IN/OUT button backgrounds
+        document.querySelectorAll('.in-btn, .out-btn').forEach(el => el.style.background = `linear-gradient(90deg, ${bA}, ${bB})`);
+      }
+
+
+      /* ---------- Color Mode Toggle ---------- */
+      feature_colormode.addEventListener('change', function () {
+        kioskFlags.colourMode = this.checked;
+        document.body.classList.toggle("light-mode", kioskFlags.colourMode);
+      });
+
+      /* ---------- Audio ---------- */
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const audioCtx = AudioCtx ? new AudioCtx() : null;
+      function playTone(freq, dur = 120, type = 'sine', gain = 0.12) { if (!audioCtx) return; const o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.type = type; o.frequency.value = freq; g.gain.value = 0; o.connect(g); g.connect(audioCtx.destination); const now = audioCtx.currentTime; g.gain.linearRampToValueAtTime(gain, now + 0.01); o.start(now); g.gain.exponentialRampToValueAtTime(0.0001, now + dur / 1000); o.stop(now + dur / 1000 + 0.02); }
+      function playSuccessTone(profile) { if (!audioCtx || !feature_sound.checked) return; if (profile === 'soft') { playTone(880, 140, 'sine', 0.12); setTimeout(() => playTone(1320, 110, 'sine', 0.08), 140); } else if (profile === 'arcade') { playTone(1040, 80, 'square', 0.14); setTimeout(() => playTone(760, 90, 'square', 0.12), 90); } else playTone(900, 90, 'sine', 0.12); }
+      function playFailTone(profile) { if (!audioCtx || !feature_sound.checked) return; if (profile === 'soft') { playTone(300, 220, 'sawtooth', 0.16); setTimeout(() => playTone(220, 130, 'sawtooth', 0.12), 160); } else if (profile === 'arcade') { playTone(220, 200, 'sawtooth', 0.18); setTimeout(() => playTone(160, 160, 'sawtooth', 0.12), 140); } else playTone(220, 180, 'sine', 0.14); }
+
+      /* ---------- Vibration & TTS ---------- */
+      function doVibrate(ok = true) { if (!feature_vibrate.checked) return; if (!('vibrate' in navigator)) return; if (ok) navigator.vibrate([30, 60]); else navigator.vibrate([160, 80, 60]); }
+      function speak(text) { try { if (!('speechSynthesis' in window)) return; const u = new SpeechSynthesisUtterance(text); u.lang = 'en-IN'; speechSynthesis.speak(u); } catch (e) { console.warn(e); } }
+
+      /* ---------- 3D notify ---------- */
+      function show3DNotify(type, text) {
+        const box = document.getElementById('notify3d');
+        box.className = `notify3d ${type}`;
+        box.innerHTML = text;
+        box.style.opacity = '1';
+        box.classList.remove('hidden');
+        if (type === 'in') { playSuccessTone('soft'); doVibrate(true); }
+        else if (type === 'out') { playSuccessTone('arcade'); doVibrate(true); }
+        else if (type === 'error') { playFailTone('soft'); doVibrate(false); }
+        setTimeout(() => { box.classList.add('hidden'); box.style.opacity = '0'; }, 2600);
+      }
+
+      /* ---------- Card tilt ---------- */
+      function onMove(e) { const bounds = kioskCard.getBoundingClientRect(); const x = (e.clientX - bounds.left) / bounds.width - 0.5; const y = (e.clientY - bounds.top) / bounds.height - 0.5; const rotX = (-y) * 6; const rotY = (x) * 10; kioskCard.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg) translateZ(6px)`; }
+      function onLeave() { kioskCard.style.transform = `rotateX(0deg) rotateY(0deg) translateZ(0)`; }
+      window.addEventListener('mousemove', onMove); kioskCard.addEventListener('mouseleave', onLeave);
+
+      /* ---------- Camera ---------- */
+      /* ---------- Camera ---------- */
+      async function startCamera() {
+        try {
+          const constraints = {
+            video: {
+              facingMode: 'user',
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            },
+            audio: false
+          };
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          camera.srcObject = stream;
+          await camera.play();
+          resizeOverlay();
+          logDebug('Camera started (Mobile Friendly)');
+        } catch (e) {
+          show3DNotify('error', 'Camera error');
+          logDebug('Camera error: ' + (e.message || e));
+        }
+      }
+      // startCamera(); // Disabled auto-start. Camera starts on Wake.
+      function resizeOverlay() { const rect = camera.getBoundingClientRect(); bboxCanvas.width = rect.width * devicePixelRatio; bboxCanvas.height = rect.height * devicePixelRatio; bboxCanvas.style.width = rect.width + 'px'; bboxCanvas.style.height = rect.height + 'px'; bboxCtx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0); }
+      window.addEventListener('resize', resizeOverlay);
+
+      /* ---------- face-api models ---------- */
+      /* ---------- face-api models ---------- */
+      const modelUrl = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+      modelStatus.innerText = 'Loading models (CDN)…';
+
+      let detectOptions;
+
+      try {
+        if (typeof faceapi === 'undefined') {
+          throw new Error("face-api library not loaded from CDN");
+        }
+
+        await faceapi.nets.tinyFaceDetector.loadFromUri(modelUrl);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(modelUrl);
+        modelStatus.innerText = 'Models loaded';
+        logDebug('face-api loaded');
+
+        detectOptions = new faceapi.TinyFaceDetectorOptions({
+          inputSize: 256,
+          scoreThreshold: 0.5
+        });
+
+      } catch (e) {
+        console.error("Critical Kiosk Error:", e);
+        modelStatus.innerText = 'Error: AI Models Failed';
+        show3DNotify('error', 'AI Model Error');
+        // Stop execution of further logic that depends on faceapi
+        return;
+      }
+      // ---------- AI helpers ----------
+      let stableSince = null;
+      let detecting = !isMobileMode;
+
+      /* ---------- LIVENESS / BLINK LOGIC ---------- */
+      let blinkCount = 0;
+      let eyeClosed = false;
+      let lastBlinkTime = 0;
+
+      // ✅ START DETECTION LOOP
+      console.log("Starting detectionLoop...");
+      detectionLoop();
+
+      function getEAR(eye) {
+        const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        // eye is an array of 6 points
+        const A = dist(eye[1], eye[5]);
+        const B = dist(eye[2], eye[4]);
+        const C = dist(eye[0], eye[3]);
+        return (A + B) / (2.0 * C);
+      }
+
+      async function detectionLoop() {
+        if (!detecting || camera.readyState < 2) {
+          requestAnimationFrame(detectionLoop);
+          return;
+        }
+
+        try {
+          const dets = await faceapi
+            .detectAllFaces(camera, detectOptions)
+            .withFaceLandmarks();
+
+          drawDetections(dets);
+
+          const hint = document.getElementById("camera-hint");
+
+          if (!dets || dets.length === 0) {
+            hint.style.display = "block";
+            hint.innerText = "Align your face inside the box";
+            stableSince = null;
+            blinkCount = 0; // ✅ Reset blink if face lost
+            // Reset blink on face loss? Optional. 
+            // Let's reset if face is gone for > 2 seconds to prevent "pre-blinking"
+            requestAnimationFrame(detectionLoop);
+            return;
+          }
+
+          // ❌ Multiple faces
+          if (dets.length > 1) {
+            hint.style.display = "block";
+            stableSince = null;
+            show3DNotify('error', '❌ Multiple faces detected');
+            requestAnimationFrame(detectionLoop);
+            return;
+          }
+
+          // ✅ Single face found
+          const face = dets[0];
+          const landmarks = face.landmarks;
+          const leftEye = landmarks.getLeftEye();
+          const rightEye = landmarks.getRightEye();
+
+          // Remove all blink detection code
+          // Employees were frustrated with blink requirement
+
+          if (!stableSince) {
+            stableSince = Date.now();
+          }
+
+          const msStable = Date.now() - stableSince;
+
+          // Hint Logic - Auto capture without blink requirement
+          hint.innerText = "✅ Face Detected";
+          hint.style.color = "#4ade80";
+          hint.style.border = "1px solid #4ade80";
+
+          // 🧠 Trigger Auto Capture immediately when face is stable
+          if (feature_autocapture.checked && msStable > 500) {
+            handleAutoCapture(face);
+          }
+
+        } catch (e) {
+          console.warn('detect error', e);
+        }
+
+        requestAnimationFrame(detectionLoop);
+      } // End detectionLoop
+
+
+
+      function clearBoxes() { bboxCtx.clearRect(0, 0, bboxCanvas.width, bboxCanvas.height); }
+      function drawDetections(dets) {
+        clearBoxes();
+        if (!dets || dets.length === 0) return;
+        const displaySize = { width: camera.clientWidth, height: camera.clientHeight };
+        const scaleX = displaySize.width / (camera.videoWidth || displaySize.width);
+        const scaleY = displaySize.height / (camera.videoHeight || displaySize.height);
+        bboxCtx.lineWidth = 3;
+        dets.forEach(d => {
+          const box = d.detection.box;
+          const x = box.x * scaleX;
+          const y = box.y * scaleY;
+          const w = box.width * scaleX;
+          const h = box.height * scaleY;
+          bboxCtx.strokeStyle = 'rgba(0,255,150,0.9)';
+          bboxCtx.fillStyle = 'rgba(0,255,150,0.08)';
+          roundRect(bboxCtx, x, y, w, h, 8);
+          const score = Math.round(d.detection.score * 100) / 100;
+          bboxCtx.font = '14px Inter, Arial';
+          bboxCtx.fillStyle = 'rgba(0,0,0,0.7)';
+          bboxCtx.fillRect(x, y - 22, 110, 20);
+          bboxCtx.fillStyle = 'rgba(255,255,255,0.95)';
+          const txt = feature_facepct.checked ? `face ${score}` : `face`;
+          bboxCtx.fillText(txt, x + 6, y - 7);
+        });
+      }
+      function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+
+      /* ---------- Helpers ---------- */
+      function logDebug(msg) { debug.classList.remove('hidden'); debug.innerText = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2); console.log('[KIOSK]', msg); }
+      function startLoading() { /* placeholder */ }
+      function stopLoading() { /* placeholder */ }
+
+
+
+      /* =========================================================
+         Employee Exists (frappe.db.exists via backend)
+        /* =========================================================
+         Employee Exists (FIXED)
+         ========================================================= */
+      async function employeeExists(employee_id) {
+        if (!employee_id) return false;
+
+        return new Promise(async resolve => {
+          const r = await callURL("smart_attendance.smart_attendance.api.custom_checkin_employee_id.check_employee_exists", { employee_id });
+          resolve(r?.message === true);
+        });
+      }
+
+
+
+      /* ================= DAILY LOGS POPUP LOGIC ================= */
+      async function fetchAndShowDailyLogs(employee_id) {
+        detecting = false; // Pause detection
+
+        // Update Title
+        document.querySelector('#dailyLogsModal .modal-title').innerText = `Daily Logs: ${employee_id}`;
+
+        // Fetch logs (Using new server-side Guest-friendly API)
+        try {
+          const ts = new Date().getTime();
+          console.log("[KIOSK] Requesting logs for:", employee_id, "at", ts);
+
+          const logsData = await callURL("smart_attendance.api.get_today_logs", {
+            employee: employee_id,
+            _t: ts
+          });
+          const logs = logsData.message || [];
+          console.log("[KIOSK] Server response:", logs.length, "items detected.");
+
+          // 🆕 Fetch Recent Attendance (History)
+          let attendanceHistory = [];
+          try {
+            const histData = await callURL("smart_attendance.api.get_recent_attendance", { employee: employee_id });
+            attendanceHistory = histData.message || [];
+          } catch (e) {
+            console.error("Error fetching attendance history", e);
+          }
+
+          // 1. Populate MODAL list
+          const list = document.getElementById('modalLogsList');
+          list.innerHTML = '';
+
+          if (logs.length === 0) {
+            list.innerHTML = `
+                                <div style="padding:24px; text-align:center; background:rgba(255,255,255,0.02); border-radius:12px; margin:10px;">
+                                    <div class="calendar-icon-dynamic">
+                                        <div class="cal-top">${new Date().toLocaleString('default', { month: 'short' }).toUpperCase()}</div>
+                                        <div class="cal-body">${new Date().getDate()}</div>
+                                    </div>
+                                    <div style="color:#94a3b8; font-size:14px;">No logs found for <b>${employee_id}</b> today</div>
+                                    <div style="font-size:11px; color:#64748b; margin-top:8px;">Server Date: ${new Date().toLocaleDateString()}</div>
+                                </div>
+                            `;
+            document.querySelector('#dailyLogsModal .modal-title').innerText = `Daily Logs (0)`;
+          } else {
+            // Update title
+            const name = logs[0].employee_name || employee_id;
+            document.querySelector('#dailyLogsModal .modal-title').innerText = `Logs: ${name}`;
+
+            // Separate by today/previous
+            const todayLogs = logs.filter(l => l.is_today);
+            const otherLogs = logs.filter(l => !l.is_today);
+
+            // Render Sections
+            if (todayLogs.length > 0) {
+              list.innerHTML += '<div style="color:#7c3aed; font-size:11px; text-transform:uppercase; font-weight:800; text-align:left; margin:10px 0 5px 5px; letter-spacing:1px;">Today</div>';
+              renderLogItems(todayLogs, list);
+            }
+
+            // Render Recent Attendance (The "5 Days" Request)
+            if (attendanceHistory.length > 0) {
+              list.innerHTML += `<div style="color:#64748b; font-size:11px; text-transform:uppercase; font-weight:800; text-align:left; margin:20px 0 5px 5px; letter-spacing:1px;">Recent Attendance (Past 5 Days)</div>`;
+              renderAttendanceItems(attendanceHistory, list);
+            }
+
+            if (otherLogs.length > 0) {
+              const header = todayLogs.length > 0 ? 'Previously' : 'Recent Check-ins';
+              list.innerHTML += `<div style="color:#64748b; font-size:11px; text-transform:uppercase; font-weight:800; text-align:left; margin:20px 0 5px 5px; letter-spacing:1px;">${header}</div>`;
+              renderLogItems(otherLogs, list);
+            }
+          }
+
+          function renderLogItems(items, container) {
+            items.forEach(l => {
+              try {
+                let timeDisplay = "??:??";
+                let dateDisplay = "";
+                if (l.time) {
+                  const tMatch = l.time.match(/(\d{2}):(\d{2})/);
+                  if (tMatch) timeDisplay = tMatch[0];
+                  if (!l.is_today) {
+                    const dMatch = l.time.match(/(\d{4}-\d{2}-\d{2})/);
+                    if (dMatch) dateDisplay = dMatch[0]; // e.g. 2026-02-16
+                  }
+                }
+                const typeClass = l.log_type === 'IN' ? 'in' : 'out';
+                container.innerHTML += `
+                                        <div class="modal-log-item" style="${!l.is_today ? 'opacity:0.75;' : ''}">
+                                            <div style="flex:1; text-align:left;">
+                                                <div style="font-weight:700; font-size:16px; color:#fff; display:flex; align-items:center; gap:8px;">
+                                                    <span style="opacity:0.9;">${timeDisplay}</span>
+                                                </div>
+                                                <div style="font-size:12px; color:#94a3b8; margin-top:2px;">
+                                                    ${l.name} ${dateDisplay ? ' | ' + dateDisplay : ''}
+                                                </div>
+                                            </div>
+                                            <span class="${typeClass}">${l.log_type}</span>
+                                        </div>
+                                    `;
+              } catch (e) {
+                console.error("[KIOSK] Render Error:", e);
+              }
+            });
+          }
+
+          function renderAttendanceItems(items, container) {
+            items.forEach(a => {
+              // Status Color Logic
+              let statusColor = '#94a3b8'; // default gray
+              if (a.status === 'Present') statusColor = '#22c55e'; // green
+              else if (a.status === 'Absent') statusColor = '#ef4444'; // red
+              else if (a.status === 'Half Day') statusColor = '#f59e0b'; // orange
+              else if (a.status === 'On Leave') statusColor = '#3b82f6'; // blue
+
+              container.innerHTML += `
+                                <div class="modal-log-item" style="border-left: 3px solid ${statusColor}; padding-left:12px;">
+                                    <div style="flex:1; text-align:left;">
+                                        <div style="font-weight:700; font-size:14px; color:#fff;">
+                                            ${a.date} <span style="font-weight:400; opacity:0.6; font-size:12px;">(${a.day})</span>
+                                        </div>
+                                        <div style="font-size:11px; color:#94a3b8; margin-top:4px;">
+                                            In: <span style="color:#fff;">${a.in_time}</span> &bull; Out: <span style="color:#fff;">${a.out_time}</span>
+                                            ${a.working_hours ? `&bull; Hrs: ${a.working_hours}` : ''}
+                                        </div>
+                                    </div>
+                                    <span style="font-size:12px; font-weight:700; color:${statusColor}; text-transform:uppercase;">${a.status}</span>
+                                </div>
+                             `;
+            });
+          }
+
+          // Update Main Panel Holidays as well!
+          loadNext15DaysHolidays(employee_id);
+
+          // Fetch and display holidays
+          try {
+            const holidayData = await callURL("smart_attendance.api.fetch_next_15_days_holidays", { employee: employee_id });
+            const holidays = holidayData.message?.holidays || [];
+
+            const holidaySection = document.getElementById('modalHolidays');
+            const holidayList = document.getElementById('modalHolidaysList');
+
+            if (holidays.length > 0) {
+              holidaySection.style.display = 'block';
+              holidayList.innerHTML = '';
+              holidays.slice(0, 15).forEach(h => {
+                holidayList.innerHTML += `
+                                        <div class="modal-holiday-item">
+                                            <strong>${h.date}</strong> - ${h.name}
+                                        </div>
+                                    `;
+              });
+            } else {
+              holidaySection.style.display = 'none';
+            }
+          } catch (e) {
+            console.error("Error fetching holidays", e);
+            document.getElementById('modalHolidays').style.display = 'none';
+          }
+
+          const modal = document.getElementById('dailyLogsModal');
+          modal.classList.add('active');
+
+        } catch (e) {
+          console.error("Error fetching logs", e);
+          // If error, just resume
+          detecting = true;
+        }
+
+        // Make modal persistent - only close on OK button click
+        document.getElementById('modalOkBtn').onclick = () => {
+          // HARD RELOAD as requested by user
+          window.location.reload();
+        };
+      } // End fetchAndShowDailyLogs
+
+
+      /* ---------- ERPNext API helpers (frappe.call) ---------- */
+      /* Get last Employee Checkin's log_type */
+      async function getLastLogType(employee_id) {
+        try {
+          if (!employee_id) return null;
+          const r = await callURL("smart_attendance.smart_attendance.api.custom_checkin_employee_id.get_last_log", { employee_id });
+          return r?.message || "OUT";
+        } catch (e) { console.error('Last log error', e); return null; }
+      }
+
+
+      /* Create Employee Checkin using frappe.client.insert */
+      // Old helpers removed
+
+
+
+      /* =========================================================
+         FINAL markAttendance (WITH VALIDATION)
+         ========================================================= */
+      async function markAttendance(employee_id, explicit_type = null, image_base64 = null) {
+        try {
+          // 1. If Employee ID is provided, validate it exists (Optional optimization)
+          if (employee_id) {
+            const exists = await employeeExists(employee_id);
+            if (!exists) {
+              show3DNotify('error', '❌ Employee not found');
+              return;
+            }
+          } else {
+            // If no Employee ID, we MUST have an image
+            if (!image_base64) {
+              show3DNotify('error', '❌ Face or ID required');
+              return;
+            }
+          }
+
+          // 2. Call Backend to Mark Attendance (Using Face Verification API)
+          // Use POST for marking attendance
+          const r = await callPost("smart_attendance.kiosk.verify_face", {
+            employee: employee_id || "",
+            image_base64: image_base64 || "",
+            log_type: explicit_type || "AUTO",
+            device_id: "null",
+            timestamp: getLocalSQLTime()
+          });
+
+          if (r.message && r.message.ok) {
+            console.log("Kiosk Success Response:", r.message);
+            const type = r.message.log_type;
+            const name = r.message.employee_name || r.message.employee;
+            const docName = r.message.name;
+
+            let msgTitle = type === 'IN' ? `✅ IN: ${name}` : `⛔ OUT: ${name}`;
+            if (docName) msgTitle += ` (${docName})`;
+
+            show3DNotify(type === 'IN' ? 'in' : 'out', msgTitle);
+
+            const detectedId = r.message.employee;
+
+            // ✅ Update Input
+            document.getElementById('employee_id').value = detectedId;
+
+            updateInOutUI(detectedId);
+            setTimeout(() => {
+              fetchAndShowDailyLogs(detectedId);
+              blinkCount = 0; // ✅ Reset blink after success logic finishes
+            }, 1000);
+          } else {
+            console.error("Kiosk Failure Response:", r);
+            const msg = r.message?.message || '❌ Attendance Failed';
+            const reason = r.message?.reason;
+
+            if (reason === 'spoofing_detected') {
+              show3DNotify('error', '🛡️ Spoofing Detected! Please use a real face.');
+            } else {
+              // If user said "Check Out shows" incorrectly, making this explicit
+              show3DNotify('error', msg);
+            }
+          }
+
+
+        } catch (e) {
+          console.error(e);
+          show3DNotify('error', '❌ Network Error');
+        }
+      }
+
+
+      /* ---------- UI update ---------- */
+      const inoutBtn = document.getElementById('inout_btn');
+      async function updateInOutUI(employee_id) {
+        try {
+          const last = await getLastLogType(employee_id);
+          const next = last === 'IN' ? 'OUT' : 'IN';
+
+          // Button shows NEXT action
+          if (next === 'IN') {
+            inoutBtn.innerText = '✅ IN';
+            inoutBtn.className = 'in-btn';
+          } else {
+            inoutBtn.innerText = '⛔ OUT';
+            inoutBtn.className = 'out-btn';
+          }
+
+          // Badge shows CURRENT status (last)
+          if (last === 'IN') {
+            inoutBadge.className = 'badge in';
+            inoutBadge.innerText = 'IN';
+          } else {
+            inoutBadge.className = 'badge out';
+            inoutBadge.innerText = 'OUT';
+          }
+          inoutBadge.classList.remove('hidden');
+
+          // hide badge after short while
+          setTimeout(() => inoutBadge.classList.add('hidden'), 1600);
+        } catch (e) { console.error(e); }
+      }
+
+
+
+
+      /* ---------- Auto-capture handler ---------- */
+      // Removed duplicate handleAutoCapture to avoid conflict with Mobile Logic
+
+
+      async function prepareCaptureCanvas() {
+        const w = camera.videoWidth || 1280;
+        const h = camera.videoHeight || 720;
+        canvas.width = w; canvas.height = h;
+      }
+
+      /* ---------- Button bindings ---------- */
+      /* ---------- Button bindings ---------- */
+      captureBtn.addEventListener('click', async () => {
+        // Removed mandatory blink check for manual button
+        // if (blinkCount === 0) { ... }
+
+        const emp = empInput.value.trim();
+
+        ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
+        imgPreview.src = dataUrl;
+        imgPreview.classList.remove('hidden');
+
+        // Let backend decide
+        markAttendance(emp, null, dataUrl);
+      });
+
+      inoutBtn.addEventListener('click', async () => {
+        // Removed mandatory blink check for manual button
+        const emp = empInput.value.trim();
+        // For manual IN/OUT without capture, we might still want an image or at least ID.
+        // If no ID, we MUST capture.
+
+        let dataUrl = null;
+        if (!emp) {
+          await prepareCaptureCanvas();
+          ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
+          dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+        }
+
+        // If we have ID, we technically don't NEED face for manual button if we trust it, 
+        // but this is a face kiosk so let's always try to send face if available or allow fallback?
+        // For now, let's assume if they click the button, they want to mark.
+        // But `mark_attendance_by_face` REQUIRES image if no ID (and even with ID it compares).
+        // So we should always capture.
+
+        if (!dataUrl) {
+          await prepareCaptureCanvas();
+          ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
+          dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+        }
+
+        // Let backend decide
+        markAttendance(emp, null, dataUrl);
+      });
+
+      previewBtn.addEventListener('click', () => imgPreview.classList.toggle('hidden'));
+
+
+
+      /* ================= LOAD HOLIDAYS ================= */
+
+      async function loadNext15DaysHolidays(employee_id = null) {
+        try {
+          const args = {};
+          if (employee_id) args.employee = employee_id;
+
+          const data = await callURL("smart_attendance.api.fetch_next_15_days_holidays", args);
+          // console.log("Holiday API Response:", data);
+
+          renderNext15Days(data.message || {});
+        } catch (e) {
+          console.error("Holiday fetch error:", e);
+        }
+      }
+
+      /* ================= RENDER ================= */
+
+      function renderNext15Days(data) {
+        const holidayBox = document.getElementById("holidayBox");
+        const holidayRange = document.getElementById("holidayRange");
+
+        holidayBox.innerHTML = "";
+        holidayRange.innerText = "";
+
+        if (!data.holidays || !data.holidays.length) {
+          holidayBox.innerHTML = "<p>No holidays</p>";
+          return;
+        }
+
+        holidayRange.innerText = "Next 15 Days";
+
+        data.holidays.forEach((h, i) => {
+          holidayBox.innerHTML += `
+      <div class="holiday-item">
+        <b>${i + 1}. ${h.date}</b><br>
+        ${h.name}
+      </div>
+    `;
+        });
+      }
+
+      /* ================= INIT ================= */
+
+      // ✅ Load holidays on page load (today → next 15 days)
+      // ✅ Load holidays on page load (today → next 15 days)
+      loadNext15DaysHolidays();
+
+      /* ================= INIT ================= */
+
+
+
+      /* Removed undefined unlockAudio call */
+
+      /* ---------- Page load updates ---------- */
+      setTimeout(() => { const emp = empInput.value.trim(); if (emp) updateInOutUI(emp); }, 800);
+
+      /* ---------- Unlock audio on first interaction ---------- */
+      document.addEventListener('click', function once() {
+        try { audioCtx && audioCtx.resume && audioCtx.resume(); } catch (e) { }
+        document.removeEventListener('click', once);
+      });
+
+      /* ---------- Initial load ---------- */
+      async function initKiosk() {
+        console.log("Initializing Kiosk...");
+        try {
+          await loadKioskSettings();
+        } catch (err) {
+          console.error("Error loading kiosk settings:", err);
+        }
+
+        try {
+          loadNext15DaysHolidays();
+        } catch (err) {
+          console.error("Error loading holidays:", err);
+        }
+
+        setTimeout(resizeOverlay, 600);
+
+        // Fullscreen toggle functionality
+        const fullscreenToggle = document.getElementById('fullscreenToggle');
+        const fullscreenIcon = document.getElementById('fullscreenIcon');
+        let isFullscreen = true;
+
+        if (fullscreenToggle) {
+          fullscreenToggle.addEventListener('click', () => {
+            isFullscreen = !isFullscreen;
+            if (isFullscreen) {
+              document.body.classList.remove('half-screen');
+              fullscreenIcon.innerText = '⛶';
+            } else {
+              document.body.classList.add('half-screen');
+              fullscreenIcon.innerText = '⛶';
+            }
+          });
+        }
+      }
+
+      if (document.readyState === 'complete') {
+        initKiosk();
+      } else {
+        window.addEventListener('load', initKiosk);
+      }
+
+
+    }); // End window load
+
+  </script>
+
+  </div>
+</body>
+
+</html>

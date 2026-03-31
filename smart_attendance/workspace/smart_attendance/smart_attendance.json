@@ -1,0 +1,28 @@
+{
+    "name": "Smart Attendance",
+    "title": "Smart Attendance",
+    "public": 1,
+    "module": "Smart Attendance",
+    "icon": "camera-lens",
+    "indicator_color": "cyan",
+    "label": "Smart Attendance",
+    "type": "Workspace",
+    "is_standard": 1,
+    "sequence_id": 1,
+    "shortcuts": [
+        {
+            "label": "Face Kiosk",
+            "type": "URL",
+            "url": "/face_kiosk",
+            "icon": "camera",
+            "color": "Purple"
+        },
+        {
+            "label": "Face Kiosk (Static)",
+            "type": "URL",
+            "url": "/assets/smart_attendance/face_kiosk.html",
+            "icon": "file",
+            "color": "Blue"
+        }
+    ]
+}

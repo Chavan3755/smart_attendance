@@ -8,17 +8,20 @@ def create_realtime_attendance(doc, method=None):
             return
 
         employee = doc.employee
-        today = nowdate()
-
+        from frappe.utils import get_datetime
+        checkin_dt = get_datetime(doc.time)
+        attendance_date = checkin_dt.date()
         
         existing = frappe.db.exists("Attendance", {
             "employee": employee,
-            "attendance_date": today
+            "attendance_date": attendance_date
         })
 
         if existing:
             att = frappe.get_doc("Attendance", existing)
             att.status = "Present"
+            if not att.in_time:
+                att.in_time = doc.time
             att.flags.ignore_permissions = True
             att.save()
             frappe.db.commit()
@@ -28,8 +31,9 @@ def create_realtime_attendance(doc, method=None):
         att = frappe.get_doc({
             "doctype": "Attendance",
             "employee": employee,
-            "attendance_date": today,
-            "status": "Present"
+            "attendance_date": attendance_date,
+            "status": "Present",
+            "in_time": doc.time
         })
 
         att.flags.ignore_permissions = True
@@ -37,4 +41,4 @@ def create_realtime_attendance(doc, method=None):
         frappe.db.commit()
 
     except Exception as e:
-        frappe.log_error(str(e), "Auto Attendance Error")
+        pass

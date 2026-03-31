@@ -1,0 +1,8 @@
+{
+    "css/smart_attendance.css": [
+        "public/css/kiosk.css"
+    ],
+    "js/smart_attendance.js": [
+        "public/js/kiosk.js"
+    ]
+}

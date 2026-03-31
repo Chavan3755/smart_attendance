@@ -1,0 +1,95 @@
+{
+    "actions": [],
+    "allow_rename": 1,
+    "creation": "2026-01-20 10:51:37.569259",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "aurora_a_color",
+        "aurora_b_color",
+        "button_color_a",
+        "button_color_b",
+        "enable_sound",
+        "enable_vibration",
+        "auto_capture",
+        "cdn_url",
+        "colour_mode"
+    ],
+    "fields": [
+        {
+            "fieldname": "aurora_a_color",
+            "fieldtype": "Color",
+            "label": "Aurora A Color"
+        },
+        {
+            "fieldname": "aurora_b_color",
+            "fieldtype": "Color",
+            "label": "Aurora B Color"
+        },
+        {
+            "fieldname": "button_color_a",
+            "fieldtype": "Color",
+            "label": "Button Color A"
+        },
+        {
+            "fieldname": "button_color_b",
+            "fieldtype": "Color",
+            "label": "Button Color B"
+        },
+        {
+            "default": "0",
+            "fieldname": "enable_sound",
+            "fieldtype": "Check",
+            "label": "Enable Sound"
+        },
+        {
+            "default": "0",
+            "fieldname": "enable_vibration",
+            "fieldtype": "Check",
+            "label": "Enable Vibration"
+        },
+        {
+            "default": "0",
+            "fieldname": "auto_capture",
+            "fieldtype": "Check",
+            "label": "Auto Capture"
+        },
+        {
+            "fieldname": "cdn_url",
+            "fieldtype": "Data",
+            "label": "CDN Url"
+        },
+        {
+            "default": "0",
+            "fieldname": "colour_mode",
+            "fieldtype": "Check",
+            "label": "Colour Mode"
+        }
+    ],
+    "grid_page_length": 50,
+    "index_web_pages_for_search": 1,
+    "issingle": 1,
+    "links": [],
+    "modified": "2026-01-20 10:55:17.752825",
+    "modified_by": "Administrator",
+    "module": "Smart Attendance",
+    "name": "Smart Attendance Settings",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "print": 1,
+            "read": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        }
+    ],
+    "row_format": "Dynamic",
+    "rows_threshold_for_grid_search": 20,
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": []
+}

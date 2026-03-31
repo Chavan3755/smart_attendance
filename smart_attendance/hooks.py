@@ -70,6 +70,11 @@ app_license = "mit"
 # automatically create page for each record of this doctype
 # website_generators = ["Web Page"]
 
+website_route_rules = [
+    {"from_route": "/face_kiosk", "to_route": "smart_kiosk_page"},
+]
+
+
 # Jinja
 # ----------
 
@@ -82,7 +87,7 @@ app_license = "mit"
 # Installation
 # ------------
 
-# before_install = "smart_attendance.install.before_install"
+before_install = "smart_attendance.install.dependency.before_install"
 # after_install = "smart_attendance.install.after_install"
 
 # Uninstallation
@@ -154,11 +159,11 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
-scheduler_events = {
-    "daily": [
-        "smart_attendance.tasks.daily_cleanup"
-    ]
-}
+# scheduler_events = {
+#     "daily": [
+#         "smart_attendance.tasks.daily_cleanup"
+#     ]
+# }
 
 # Testing
 # -------
@@ -195,7 +200,7 @@ override_whitelisted_methods = {
 
 # Request Events
 # ----------------
-# before_request = ["smart_attendance.utils.before_request"]
+before_request = ["smart_attendance.utils.before_request"]
 # after_request = ["smart_attendance.utils.after_request"]
 
 # Job Events
@@ -243,6 +248,7 @@ override_whitelisted_methods = {
 
 # --- API methods exposed for kiosk (no CSRF) ---
 ignore_csrf = [
-    "smart_attendance.smart_attendance.api.verify_face",
-    "smart_attendance.smart_attendance.api.enroll_face",
+    "smart_attendance.api.verify_face",
+    "smart_attendance.api.enroll_face",
+    "smart_attendance.kiosk.verify_face",
 ]

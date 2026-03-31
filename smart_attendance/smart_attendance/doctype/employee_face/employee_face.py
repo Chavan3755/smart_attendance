@@ -1,80 +1,247 @@
 import frappe
 from frappe.model.document import Document
 from frappe.utils import get_site_path
-
-import face_recognition
-from PIL import Image
-import numpy as np
-import io
 import os
+import json
 
+# Try importing face_recognition
+try:
+    import face_recognition
+except ImportError:
+    face_recognition = None
 
 class EmployeeFace(Document):
-    def after_insert(self):
-        # 0) Debug: log that hook actually ran
-        frappe.log_error(
-            title="EmployeeFace.after_insert",
-            message=f"Running after_insert for {self.name}, image={self.face_image}",
-        )
-
-        # 1) Agar image hi nahi di, kuch mat karo
+    def validate(self):
+        # 1) Validate Image
         if not self.face_image:
             frappe.throw("Please upload Face Image before saving.")
 
-        # 2) Full file path banao: /home/.../sites/site1.com/private/files/...
-        file_path = os.path.join(get_site_path(), self.face_image.lstrip("/"))
+        # 2) Trigger encoding if missing or image changed
+        # If it's a new doc, or image changed, or encoding is empty
+        should_encode = True
+        if not self.is_new():
+            old_doc = self.get_doc_before_save()
+            if old_doc and old_doc.face_image == self.face_image and self.encoding:
+                should_encode = False
+        
+        if should_encode:
+            frappe.enqueue(
+                "smart_attendance.smart_attendance.doctype.employee_face.employee_face.process_face_encoding",
+                queue="long",
+                timeout=1500,
+                doc_name=self.name,
+                file_url=self.face_image
+            )
+            frappe.msgprint("Face Analysis queued. Please wait...")
 
-        if not os.path.exists(file_path):
-            frappe.throw(f"Face image file not found: {file_path}")
-
+def process_face_encoding(doc_name, file_url):
+    """
+    Background job to:
+    1. Resolve file path
+    2. face_recognition.face_encodings()
+    3. Save encoding
+    4. Fix File attachment
+    """
+    try:
+        # Re-import locally for worker context
+        import frappe
+        import os
+        import json
+        from frappe.utils import get_site_path
+        
         try:
-            # 3) PIL se image open karo (PNG / JPG / WebP sab chalega)
-            pil_image = Image.open(file_path)
+            import face_recognition
+            from PIL import Image
+            import numpy as np
+        except ImportError:
+            pass
+            return
 
-            # 4) Har format ko force RGB 8bit me convert
-            pil_image = pil_image.convert("RGB")
+        # 1) Resolve Path
+        file_path = None
+        if file_url.startswith("/private/files/"):
+            file_path = get_site_path("private", "files", file_url.replace("/private/files/", ""))
+        elif file_url.startswith("/files/"):
+            file_path = get_site_path("public", "files", file_url.replace("/files/", ""))
+        else:
+             # Fallback
+            file_path = os.path.join(get_site_path(), file_url.lstrip("/"))
 
-            # 5) Optional: In-memory JPEG (face_recognition ko 100% pasand)
-            buffer = io.BytesIO()
-            pil_image.save(buffer, format="JPEG")
-            buffer.seek(0)
+        if not file_path or not os.path.exists(file_path):
+            pass
+            return
 
-            # 6) face_recognition se load
-            image = face_recognition.load_image_file(buffer)
-
-            # 7) Safety: numpy array ko uint8 + contiguous bana do
-            image = np.asarray(image, dtype=np.uint8)
-            image = np.ascontiguousarray(image)
-
-            # 8) Encoding nikaalo
-            encodings = face_recognition.face_encodings(image)
-
-            if not encodings:
-                frappe.throw("No face detected in the uploaded image.")
-
-            vector = encodings[0]  # first face
-            encoding_str = ",".join(map(str, vector))
-
-            # 9) Encoding field me store karo (Long Text / Text field: 'encoding')
-            self.db_set("encoding", encoding_str, update_modified=False)
-
-            frappe.log_error(
-                title="EmployeeFace.after_insert SUCCESS",
-                message=f"{self.name}: encoding length={len(vector)}",
-            )
-
-        except RuntimeError as e:
-            # dlib / face_recognition specific runtime errors
-            frappe.log_error(
-                title="EmployeeFace.after_insert RuntimeError",
-                message=frappe.get_traceback(),
-            )
-            frappe.throw(f"Error processing image: {e}")
-
+        # 2) Generate Encoding
+        encoding_list = []
+        try:
+            img = Image.open(file_path).convert('RGB')
+            arr = np.array(img)
+            encs = face_recognition.face_encodings(arr)
+            if encs:
+                encoding_list = encs[0].tolist()
         except Exception as e:
-            # koi bhi unexpected error
-            frappe.log_error(
-                title="EmployeeFace.after_insert ERROR",
-                message=frappe.get_traceback(),
-            )
-            frappe.throw(f"Unexpected error while processing image: {e}")
+             pass
+             return
+
+        if not encoding_list:
+             pass
+             return
+
+        encoding_str = json.dumps(encoding_list)
+
+        # 3) Update DB
+        frappe.db.set_value("Employee Face", doc_name, "encoding", encoding_str)
+        
+        # 4) FIX File Attachment (Optional but good for housekeeping)
+        files = frappe.get_all("File", filters={"file_url": file_url}, fields=["name", "attached_to_name"])
+        for f in files:
+            if f.attached_to_name != doc_name:
+                frappe.db.set_value("File", f.name, {
+                    "attached_to_doctype": "Employee Face",
+                    "attached_to_name": doc_name,
+                    "is_private": 0
+                })
+        
+        frappe.db.commit()
+        
+    except Exception as e:
+        pass
+
+def check_duplicate_face(new_encoding, current_doc_name):
+    """
+    Check if the new encoding matches any existing active employee's face.
+    Returns: (is_duplicate, matched_employee, distance)
+    """
+    import face_recognition
+    import numpy as np
+    import json
+    
+    # Fetch all other encodings
+    # candidates = frappe.db.sql("""
+    #     SELECT ef.employee, ef.encoding, ef.name as docname
+    #     FROM `tabEmployee Face` ef
+    #     INNER JOIN `tabEmployee` e ON ef.employee = e.name
+    #     WHERE ef.encoding IS NOT NULL AND ef.encoding != ''
+    #     AND e.status = 'Active'
+    #     AND ef.name != %s
+    # """, (current_doc_name,), as_dict=True)
+
+    # Better query: Get all encodings (even inactive, to be safe? No, only active per requirements)
+    candidates = frappe.db.sql("""
+        SELECT ef.employee, ef.encoding, ef.name as docname
+        FROM `tabEmployee Face` ef
+        INNER JOIN `tabEmployee` e ON ef.employee = e.name
+        WHERE ef.encoding IS NOT NULL AND ef.encoding != ''
+        AND e.status = 'Active'
+        AND ef.name != %s
+    """, (current_doc_name,), as_dict=True)
+
+    if not candidates:
+        return False, None, 1.0
+
+    min_dist = 1.0
+    matched_emp = None
+
+    for cand in candidates:
+        try:
+            db_vector = json.loads(cand.encoding)
+            dist = face_recognition.face_distance([np.array(db_vector)], np.array(new_encoding))[0]
+            
+            if dist < min_dist:
+                min_dist = dist
+                matched_emp = cand.employee
+        except:
+            continue
+
+    # STRICT DUPLICATE THRESHOLD
+    # If distance is less than 0.45, it is almost certainly the same person.
+    if min_dist < 0.45:
+        return True, matched_emp, min_dist
+
+    return False, None, min_dist
+
+def process_face_encoding(doc_name, file_url):
+    """
+    Background job to:
+    1. Resolve file path
+    2. face_recognition.face_encodings()
+    3. CHECK FOR DUPLICATES
+    4. Save encoding
+    5. Fix File attachment
+    """
+    try:
+        # Re-import locally for worker context
+        import frappe
+        import os
+        import json
+        from frappe.utils import get_site_path
+        
+        try:
+            import face_recognition
+            from PIL import Image
+            import numpy as np
+        except ImportError:
+            pass
+            return
+
+        # 1) Resolve Path
+        file_path = None
+        if file_url.startswith("/private/files/"):
+            file_path = get_site_path("private", "files", file_url.replace("/private/files/", ""))
+        elif file_url.startswith("/files/"):
+            file_path = get_site_path("public", "files", file_url.replace("/files/", ""))
+        else:
+             # Fallback
+            file_path = os.path.join(get_site_path(), file_url.lstrip("/"))
+
+        if not file_path or not os.path.exists(file_path):
+            pass
+            return
+
+        # 2) Generate Encoding
+        encoding_list = []
+        try:
+            img = Image.open(file_path).convert('RGB')
+            arr = np.array(img)
+            encs = face_recognition.face_encodings(arr)
+            if encs:
+                encoding_list = encs[0].tolist()
+        except Exception as e:
+             pass
+             return
+
+        if not encoding_list:
+             pass
+             # Optionally update doc to say "No Face Detected"
+             frappe.db.add_comment("Employee Face", doc_name, "Error: No face detected in the uploaded image.")
+             return
+
+        # 3) CHECK DUPLICATES
+        is_dup, match_emp, match_dist = check_duplicate_face(encoding_list, doc_name)
+        
+        if is_dup:
+            msg = f"Duplicate Face Detected! Matches {match_emp} (Distance: {match_dist:.3f}). Encoding NOT saved."
+            pass
+            frappe.db.add_comment("Employee Face", doc_name, f"❌ {msg}")
+            # Do NOT save encoding
+            return
+
+        encoding_str = json.dumps(encoding_list)
+
+        # 4) Update DB
+        frappe.db.set_value("Employee Face", doc_name, "encoding", encoding_str)
+        
+        # 5) FIX File Attachment
+        files = frappe.get_all("File", filters={"file_url": file_url}, fields=["name", "attached_to_name"])
+        for f in files:
+            if f.attached_to_name != doc_name:
+                frappe.db.set_value("File", f.name, {
+                    "attached_to_doctype": "Employee Face",
+                    "attached_to_name": doc_name,
+                    "is_private": 0
+                })
+        
+        frappe.db.commit()
+        
+    except Exception as e:
+        pass
